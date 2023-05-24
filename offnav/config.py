@@ -137,6 +137,32 @@ _CONFIG.IL.BehaviorCloning.use_double_buffered_sampler = False
 _CONFIG.IL.BehaviorCloning.hidden_size = 2048
 
 ##############################################
+# OFF config
+##############################################
+
+_CONFIG.OFF = CN()
+_CONFIG.OFF.POLICY = CN()
+_CONFIG.OFF.POLICY.name = "ObjectNavIQLPolicy"
+_CONFIG.OFF.POLICY.USE_IW = True
+_CONFIG.OFF.POLICY.distrib_backend = "NCCL"
+_CONFIG.OFF.BehaviorCloning = CN()
+_CONFIG.OFF.BehaviorCloning.lr = 0.001
+_CONFIG.OFF.BehaviorCloning.encoder_lr = 0.001
+_CONFIG.OFF.BehaviorCloning.entropy_coef = 0.0
+_CONFIG.OFF.BehaviorCloning.eps = 1.0e-5
+_CONFIG.OFF.BehaviorCloning.wd = 0.0
+_CONFIG.OFF.BehaviorCloning.clip_param = 0.2
+_CONFIG.OFF.BehaviorCloning.num_mini_batch = 2
+_CONFIG.OFF.BehaviorCloning.max_grad_norm = 0.2
+_CONFIG.OFF.BehaviorCloning.num_steps = 64
+_CONFIG.OFF.BehaviorCloning.use_linear_clip_decay = False
+_CONFIG.OFF.BehaviorCloning.use_linear_lr_decay = True
+_CONFIG.OFF.BehaviorCloning.reward_window_size = 50
+_CONFIG.OFF.BehaviorCloning.sync_frac = 0.6
+_CONFIG.OFF.BehaviorCloning.use_double_buffered_sampler = False
+_CONFIG.OFF.BehaviorCloning.hidden_size = 2048
+
+##############################################
 # Policy config
 ##############################################
 
@@ -165,8 +191,12 @@ _CONFIG.POLICY.STATE_ENCODER.hidden_size = 2048
 _CONFIG.POLICY.STATE_ENCODER.rnn_type = "GRU"
 _CONFIG.POLICY.STATE_ENCODER.num_recurrent_layers = 2
 
+_CONFIG.POLICY.QNET = CN()
+_CONFIG.POLICY.QNET.output_size = 1
+
+
 _CONFIG.POLICY.SEQ2SEQ = CN()
-_CONFIG.POLICY.SEQ2SEQ.use_prev_action = True
+_CONFIG.POLICY.SEQ2SEQ.use_action = True
 
 _CONFIG.POLICY.CRITIC = CN()
 _CONFIG.POLICY.CRITIC.no_critic = False

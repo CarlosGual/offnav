@@ -25,14 +25,14 @@ class ObjectNavILMAENet(Net):
     """
 
     def __init__(
-        self,
-        observation_space: Space,
-        policy_config: Config,
-        num_actions: int,
-        run_type: str,
-        hidden_size: int,
-        rnn_type: str,
-        num_recurrent_layers: int,
+            self,
+            observation_space: Space,
+            policy_config: Config,
+            num_actions: int,
+            run_type: str,
+            hidden_size: int,
+            rnn_type: str,
+            num_recurrent_layers: int,
     ):
         super().__init__()
         self.policy_config = policy_config
@@ -98,10 +98,10 @@ class ObjectNavILMAENet(Net):
 
         if ObjectGoalSensor.cls_uuid in observation_space.spaces:
             self._n_object_categories = (
-                int(
-                    observation_space.spaces[ObjectGoalSensor.cls_uuid].high[0]
-                )
-                + 1
+                    int(
+                        observation_space.spaces[ObjectGoalSensor.cls_uuid].high[0]
+                    )
+                    + 1
             )
             logger.info(
                 "Object categories: {}".format(self._n_object_categories)
@@ -236,14 +236,14 @@ class ObjectNavILMAENet(Net):
 @baseline_registry.register_policy
 class ObjectNavILMAEPolicy(ILPolicy):
     def __init__(
-        self,
-        observation_space: Space,
-        action_space: Space,
-        policy_config: Config,
-        run_type: str,
-        hidden_size: int,
-        rnn_type: str,
-        num_recurrent_layers: int,
+            self,
+            observation_space: Space,
+            action_space: Space,
+            policy_config: Config,
+            run_type: str,
+            hidden_size: int,
+            rnn_type: str,
+            num_recurrent_layers: int,
     ):
         super().__init__(
             ObjectNavILMAENet(

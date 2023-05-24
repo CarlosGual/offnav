@@ -10,6 +10,8 @@ from habitat_baselines.rl.ppo import Policy
 from habitat_baselines.utils.common import CategoricalNet
 from torch import nn as nn
 
+from offnav.common.distributions import MultivariateDiagonalNormal
+
 
 class ILPolicy(nn.Module, Policy):
     def __init__(
@@ -45,6 +47,96 @@ class ILPolicy(nn.Module, Policy):
         distribution_entropy = distribution.entropy().mean()
 
         return distribution.logits, rnn_hidden_states, distribution_entropy
+
+    def act(
+        self,
+        observations,
+        rnn_hidden_states,
+        prev_actions,
+        masks,
+        deterministic=False,
+        return_distribution=False,
+    ):
+        features, rnn_hidden_states = self.net(
+            observations, rnn_hidden_states, prev_actions, masks
+        )
+        distribution = self.action_distribution(features)
+
+        if deterministic:
+            action = distribution.mode()
+        else:
+            action = distribution.sample()
+        action_log_probs = distribution.log_probs(action)
+        distribution_entropy = distribution.entropy().mean()
+
+        if self.no_critic:
+            return action, rnn_hidden_states
+
+        value = self.critic(features)
+
+        if return_distribution:
+            return (
+                value,
+                action,
+                action_log_probs,
+                rnn_hidden_states,
+            )
+
+        return (
+            value,
+            action,
+            action_log_probs,
+            rnn_hidden_states,
+        )
+
+    def get_value(self, observations, rnn_hidden_states, prev_actions, masks):
+        features, _ = self.net(
+            observations, rnn_hidden_states, prev_actions, masks
+        )
+        return self.critic(features)
+
+    def evaluate_actions(
+        self, observations, rnn_hidden_states, prev_actions, masks, action
+    ):
+        features, rnn_hidden_states = self.net(
+            observations, rnn_hidden_states, prev_actions, masks
+        )
+        distribution = self.action_distribution(features)
+        value = self.critic(features)
+
+        action_log_probs = distribution.log_probs(action)
+        distribution_entropy = distribution.entropy().mean()
+
+        return (
+            value,
+            action_log_probs,
+            distribution_entropy,
+            rnn_hidden_states,
+        )
+
+    @classmethod
+    @abc.abstractmethod
+    def from_config(cls, config, observation_space, action_space):
+        pass
+
+
+class IQLPolicy(nn.Module, Policy):
+    def __init__(
+        self,
+        net,
+        dim_actions,
+
+    ):
+        super().__init__()
+        self.net = net
+        self.dim_actions = dim_actions
+        self.action_distribution = MultivariateDiagonalNormal
+
+    def forward(self, *x):
+        mean, std = self.net(*x)
+        distribution = self.action_distribution(mean, std)
+
+        return distribution
 
     def act(
         self,

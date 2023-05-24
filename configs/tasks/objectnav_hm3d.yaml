@@ -19,13 +19,13 @@ SIMULATOR:
     HFOV: 79
     POSITION: [0, 0.88, 0]
   RGB_SENSOR:
-    WIDTH: 64
-    HEIGHT: 48
+    WIDTH: 640
+    HEIGHT: 480
     HFOV: 79
     POSITION: [0, 0.88, 0]
   DEPTH_SENSOR:
-    WIDTH: 64
-    HEIGHT: 48
+    WIDTH: 640
+    HEIGHT: 480
     HFOV: 79
     MIN_DEPTH: 0.5
     MAX_DEPTH: 5.0
@@ -59,8 +59,8 @@ TASK:
 
 DATASET:
   TYPE: ObjectNav-v2
-  SPLIT: eval
-  DATA_PATH: "data/datasets/objectnav/hm3d/v1/{split}/{split}.json.gz"
+  SPLIT: train
+  DATA_PATH: "data/datasets/objectnav/objectnav_hm3d_hd/{split}/{split}.json.gz"
   SCENES_DIR: "data/scene_datasets/"
   MAX_EPISODE_STEPS: 500
 

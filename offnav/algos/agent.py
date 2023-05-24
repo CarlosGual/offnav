@@ -13,20 +13,22 @@ from torch import Tensor
 from torch import nn as nn
 from torch import optim as optim
 
+from offnav.utils.utils import soft_update_from_to
+
 
 class ILAgent(nn.Module):
     def __init__(
-        self,
-        actor_critic: nn.Module,
-        num_envs: int,
-        num_mini_batch: int,
-        lr: Optional[float] = None,
-        encoder_lr: Optional[float] = None,
-        eps: Optional[float] = None,
-        max_grad_norm: Optional[float] = None,
-        wd: Optional[float] = None,
-        optimizer: Optional[str] = "AdamW",
-        entropy_coef: Optional[float] = 0.0,
+            self,
+            actor_critic: nn.Module,
+            num_envs: int,
+            num_mini_batch: int,
+            lr: Optional[float] = None,
+            encoder_lr: Optional[float] = None,
+            eps: Optional[float] = None,
+            max_grad_norm: Optional[float] = None,
+            wd: Optional[float] = None,
+            optimizer: Optional[str] = "AdamW",
+            entropy_coef: Optional[float] = 0.0,
     ) -> None:
 
         super().__init__()
@@ -88,7 +90,6 @@ class ILAgent(nn.Module):
         hidden_states = []
 
         for batch in data_generator:
-
             # Reshape to do in a single forward pass for all steps
             (logits, rnn_hidden_states, dist_entropy) = self.actor_critic(
                 batch["observations"],
@@ -113,8 +114,8 @@ class ILAgent(nn.Module):
             ].view(T, N, -1)
 
             action_loss_term = (
-                (inflections_batch * action_loss.unsqueeze(-1)).sum(0)
-                / inflections_batch.sum(0)
+                    (inflections_batch * action_loss.unsqueeze(-1)).sum(0)
+                    / inflections_batch.sum(0)
             ).mean()
             total_loss = action_loss_term - entropy_term
 
@@ -166,124 +167,183 @@ EPS_PPO = 1e-5
 
 class IQLAgent(nn.Module):
     def __init__(
-        self,
-        actor_critic: nn.Module,
-        num_envs: int,
-        num_mini_batch: int,
-        lr: Optional[float] = None,
-        encoder_lr: Optional[float] = None,
-        eps: Optional[float] = None,
-        max_grad_norm: Optional[float] = None,
-        wd: Optional[float] = None,
-        optimizer: Optional[str] = "AdamW",
-        entropy_coef: Optional[float] = 0.0,
+            self,
+            actor_critic: nn.Module,
+            num_envs: int,
+            num_mini_batch: int,
+            policy_update_period: int,
+            q_update_period: int,
+            target_update_period: int,
+            eps: Optional[float] = None,
+            clip_score: Optional[float] = 100,
+            entropy_coef: Optional[float] = 0.0,
+            discount: Optional[float] = 0.99,
+            quantile: Optional[float] = 0.7,
+            beta: Optional[float] = 1.0 / 3,
+            policy_lr: Optional[float] = 3E-4,
+            qf_lr: Optional[float] = 3E-4,
+            policy_weight_decay: Optional[float] = 0,
+            q_weight_decay: Optional[float] = 0,
+            soft_target_tau: Optional[float] = 0.005
     ) -> None:
 
         super().__init__()
 
+        self.soft_target_tau = soft_target_tau
+        self.target_update_period = target_update_period
+        self.q_update_period = q_update_period
+        self.policy_update_period = policy_update_period
+        self.beta = beta
+        self.quantile = quantile
         self.actor_critic = actor_critic
 
         self.num_mini_batch = num_mini_batch
 
-        self.max_grad_norm = max_grad_norm
+        self.clip_score = clip_score
         self.num_envs = num_envs
         self.entropy_coef = entropy_coef
+        self.discount = discount
 
-        # use different lr for visual encoder and other networks
-        visual_encoder_params, other_params = [], []
-        for name, param in actor_critic.named_parameters():
-            if param.requires_grad:
-                if "net.visual_encoder.backbone" in name:
-                    visual_encoder_params.append(param)
-                else:
-                    other_params.append(param)
-        logger.info(
-            "Visual Encoder params: {}".format(len(visual_encoder_params))
+        self.qf_criterion = nn.MSELoss()
+        self.vf_criterion = nn.MSELoss()
+
+        # Optimizers
+        self.policy_optimizer = optim.Adam(
+            list(
+                filter(
+                    lambda p: p.requires_grad, actor_critic.parameters()
+                )
+            ),
+            lr=policy_lr,
+            weight_decay=policy_weight_decay,
+            eps=eps,
         )
-        logger.info("Other params: {}".format(len(other_params)))
+        self.qf1_optimizer = optim.Adam(
+            list(
+                filter(
+                    lambda p: p.requires_grad, actor_critic.qf1.parameters()
+                )
+            ),
+            lr=qf_lr,
+            weight_decay=q_weight_decay,
+            eps=eps,
+        )
+        self.qf2_optimizer = optim.Adam(
+            list(
+                filter(
+                    lambda p: p.requires_grad, actor_critic.qf2.parameters()
+                )
+            ),
+            lr=qf_lr,
+            weight_decay=q_weight_decay,
+            eps=eps,
+        )
+        self.vf_optimizer = optim.Adam(
+            list(
+                filter(
+                    lambda p: p.requires_grad, actor_critic.vf.parameters()
+                )
+            ),
+            lr=qf_lr,
+            weight_decay=q_weight_decay,
+            eps=eps,
+        )
 
-        if optimizer == "AdamW":
-            self.optimizer = optim.AdamW(
-                [
-                    {"params": visual_encoder_params, "lr": encoder_lr},
-                    {"params": other_params, "lr": lr},
-                ],
-                lr=lr,
-                eps=eps,
-                weight_decay=wd,
-            )
-        else:
-            self.optimizer = optim.Adam(
-                list(
-                    filter(
-                        lambda p: p.requires_grad, actor_critic.parameters()
-                    )
-                ),
-                lr=lr,
-                eps=eps,
-            )
         self.device = next(actor_critic.parameters()).device
 
     def forward(self, *x):
         raise NotImplementedError
 
-    def update(self, rollouts) -> Tuple[float, Any, float, float]:
+    def update(self, rollouts, num_steps_done) -> Tuple[float, Any, float, float]:
         total_loss_epoch = 0.0
         total_entropy = 0.0
         total_action_loss = 0.0
 
-        profiling_wrapper.range_push("IQL.update epoch")
+        profiling_wrapper.range_push("OFF.update epoch")
         data_generator = rollouts.recurrent_generator(self.num_mini_batch)
-        cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction="none")
         hidden_states = []
 
         for batch in data_generator:
+            obs = batch["observations"]
+            actions = batch["actions"]
+            rewards = batch["rewards"]
+            next_obs = batch["next_observations"]
+            terminals = torch.logical_not(batch["masks"]).float()
 
-            # Reshape to do in a single forward pass for all steps
-            (logits, rnn_hidden_states, dist_entropy) = self.actor_critic(
-                batch["observations"],
-                batch["recurrent_hidden_states"],
-                batch["prev_actions"],
-                batch["masks"],
-            )
+            """
+            QF Loss
+            """
+            q1_pred = self.actor_critic.qf1(obs, actions)
+            q2_pred = self.actor_critic.qf2(obs, actions)
+            target_vf_pred = self.actor_critic.vf(next_obs, actions).detach()
 
-            N = batch["recurrent_hidden_states"].shape[0]
-            T = batch["actions"].shape[0] // N
-            actions_batch = batch["actions"].view(T, N, -1)
-            logits = logits.view(T, N, -1)
+            q_target = rewards + (1. - terminals) * self.discount * target_vf_pred
+            q_target = q_target.detach()
+            qf1_loss = self.qf_criterion(q1_pred, q_target)
+            qf2_loss = self.qf_criterion(q2_pred, q_target)
 
-            action_loss = cross_entropy_loss(
-                logits.permute(0, 2, 1), actions_batch.squeeze(-1)
-            )
-            entropy_term = dist_entropy * self.entropy_coef
+            """
+            VF Loss
+            """
+            q_pred = torch.min(
+                self.actor_critic.target_qf1(obs, actions),
+                self.actor_critic.target_qf2(obs, actions),
+            ).detach()
+            vf_pred = self.actor_critic.vf(obs, actions)
+            vf_err = vf_pred - q_pred
+            vf_sign = (vf_err > 0).float()
+            vf_weight = (1 - vf_sign) * self.quantile + vf_sign * (1 - self.quantile)
+            vf_loss = (vf_weight * (vf_err ** 2)).mean()
 
-            self.optimizer.zero_grad()
-            inflections_batch = batch["observations"][
-                "inflection_weight"
-            ].view(T, N, -1)
+            """
+            Policy Loss
+            """
+            dist = self.actor_critic(obs, actions)
+            policy_logpp = dist.log_prob(actions)
 
-            action_loss_term = (
-                (inflections_batch * action_loss.unsqueeze(-1)).sum(0)
-                / inflections_batch.sum(0)
-            ).mean()
-            total_loss = action_loss_term - entropy_term
+            adv = q_pred - vf_pred
+            exp_adv = torch.exp(adv / self.beta)
+            if self.clip_score is not None:
+                exp_adv = torch.clamp(exp_adv, max=self.clip_score)
 
-            self.before_backward(total_loss)
-            total_loss.backward()
-            self.after_backward(total_loss)
+            weights = exp_adv[:, 0].detach()
+            policy_loss = (-policy_logpp * weights).mean()
 
-            self.before_step()
-            self.optimizer.step()
-            self.after_step()
+            """
+            Update networks
+            """
+            if num_steps_done % self.q_update_period == 0:
+                self.qf1_optimizer.zero_grad()
+                qf1_loss.backward()
+                self.qf1_optimizer.step()
 
-            total_loss_epoch += total_loss.item()
-            total_action_loss += action_loss_term.item()
-            total_entropy += dist_entropy.item()
-            hidden_states.append(rnn_hidden_states)
+                self.qf2_optimizer.zero_grad()
+                qf2_loss.backward()
+                self.qf2_optimizer.step()
+
+                self.vf_optimizer.zero_grad()
+                vf_loss.backward()
+                self.vf_optimizer.step()
+
+            if num_steps_done % self.policy_update_period == 0:
+                self.policy_optimizer.zero_grad()
+                policy_loss.backward()
+                self.policy_optimizer.step()
+
+            """
+            Soft Updates
+            """
+            if num_steps_done % self.target_update_period == 0:
+                soft_update_from_to(
+                    self.actor_critic.qf1, self.actor_critic.target_qf1, self.soft_target_tau
+                )
+                soft_update_from_to(
+                    self.actor_critic.qf2, self.actor_critic.target_qf2, self.soft_target_tau
+                )
 
         profiling_wrapper.range_pop()
 
-        hidden_states = torch.cat(hidden_states, dim=0).detach()
+        # hidden_states = torch.cat(hidden_states, dim=0).detach()
 
         total_loss_epoch /= self.num_mini_batch
         total_entropy /= self.num_mini_batch
@@ -324,6 +384,7 @@ class DecentralizedDistributedMixin:
                                    forward pass, otherwise the gradient reduction
                                    will not work correctly.
         """
+
         # NB: Used to hide the hooks from the nn.Module,
         # so they don't show up in the state_dict
         class Guard:

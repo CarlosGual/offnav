@@ -8,35 +8,35 @@ from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.models.rnn_state_encoder import build_rnn_state_encoder
 from habitat_baselines.rl.ppo import Net
 
-from offnav.policy.policy import ILPolicy
+from offnav.policy.policy import ILPolicy, IQLPolicy
 from offnav.policy.transforms import get_transform
 from offnav.policy.visual_encoder import VisualEncoder
 from offnav.utils.utils import load_encoder
 
 
-class ObjectNavILMAENet(Net):
-    r"""A baseline sequence to sequence network that concatenates instruction,
-    RGB, and depth encodings before decoding an action distribution with an RNN.
+class ObjectNavQNet(Net):
+    r"""A baseline ResNet network that concatenates instruction,
+    RGB, and depth encodings before decoding a reward value with an FC Layer.
     Modules:
         Instruction encoder
         Depth encoder
         RGB encoder
-        RNN state encoder
     """
 
     def __init__(
-        self,
-        observation_space: Space,
-        policy_config: Config,
-        num_actions: int,
-        run_type: str,
-        hidden_size: int,
-        rnn_type: str,
-        num_recurrent_layers: int,
+            self,
+            observation_space: Space,
+            policy_config: Config,
+            num_actions: int,
+            run_type: str,
+            use_actions: bool,
+            output_activation=nn.Identity
     ):
         super().__init__()
         self.policy_config = policy_config
-        rnn_input_size = 0
+        self._output_size = policy_config.QNET.output_size
+        self.use_actions = use_actions
+        fc_input_size = 0
 
         rgb_config = policy_config.RGB_ENCODER
         name = "resize"
@@ -68,7 +68,7 @@ class ObjectNavILMAENet(Net):
             nn.ReLU(True),
         )
 
-        rnn_input_size += policy_config.RGB_ENCODER.hidden_size
+        fc_input_size += policy_config.RGB_ENCODER.hidden_size
         logger.info(
             "RGB encoder is {}".format(policy_config.RGB_ENCODER.backbone)
         )
@@ -78,29 +78,29 @@ class ObjectNavILMAENet(Net):
                 EpisodicGPSSensor.cls_uuid
             ].shape[0]
             self.gps_embedding = nn.Linear(input_gps_dim, 32)
-            rnn_input_size += 32
+            fc_input_size += 32
             logger.info("\n\nSetting up GPS sensor")
 
         if EpisodicCompassSensor.cls_uuid in observation_space.spaces:
-            assert (                observation_space.spaces[EpisodicCompassSensor.cls_uuid].shape[
-                    0
-                ]
-                == 1
-            ), "Expected compass with 2D rotation."
+            assert (observation_space.spaces[EpisodicCompassSensor.cls_uuid].shape[
+                        0
+                    ]
+                    == 1
+                    ), "Expected compass with 2D rotation."
             input_compass_dim = 2  # cos and sin of the angle
             self.compass_embedding_dim = 32
             self.compass_embedding = nn.Linear(
                 input_compass_dim, self.compass_embedding_dim
             )
-            rnn_input_size += 32
+            fc_input_size += 32
             logger.info("\n\nSetting up Compass sensor")
 
         if ObjectGoalSensor.cls_uuid in observation_space.spaces:
             self._n_object_categories = (
-                int(
-                    observation_space.spaces[ObjectGoalSensor.cls_uuid].high[0]
-                )
-                + 1
+                    int(
+                        observation_space.spaces[ObjectGoalSensor.cls_uuid].high[0]
+                    )
+                    + 1
             )
             logger.info(
                 "Object categories: {}".format(self._n_object_categories)
@@ -108,14 +108,14 @@ class ObjectNavILMAENet(Net):
             self.obj_categories_embedding = nn.Embedding(
                 self._n_object_categories, 32
             )
-            rnn_input_size += 32
+            fc_input_size += 32
             logger.info("\n\nSetting up Object Goal sensor")
 
-        if policy_config.SEQ2SEQ.use_prev_action:
-            self.prev_action_embedding = nn.Embedding(num_actions + 1, 32)
-            rnn_input_size += self.prev_action_embedding.embedding_dim
+        if policy_config.SEQ2SEQ.use_action and self.use_actions:
+            self.action_embedding = nn.Embedding(num_actions, 32)
+            fc_input_size += self.action_embedding.embedding_dim
 
-        self.rnn_input_size = rnn_input_size
+        self.fc_input_size = fc_input_size
 
         # load pretrained weights
         if rgb_config.pretrained_encoder is not None:
@@ -134,41 +134,43 @@ class ObjectNavILMAENet(Net):
                 p.requires_grad = False
 
         logger.info(
-            "State enc: {} - {} - {} - {}".format(
-                rnn_input_size, hidden_size, rnn_type, num_recurrent_layers
+            "Fc size input/output: {} - {}".format(
+                fc_input_size, self._output_size
             )
         )
 
-        self.state_encoder = build_rnn_state_encoder(
-            rnn_input_size,
-            hidden_size=hidden_size,
-            rnn_type=rnn_type,
-            num_layers=num_recurrent_layers,
+        self.state_encoder = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(
+                self.fc_input_size,
+                self._output_size,
+            ),
+            output_activation(),
         )
-        self._hidden_size = hidden_size
         self.train()
 
     @property
     def output_size(self):
-        return self._hidden_size
+        return self._output_size
 
     @property
     def is_blind(self):
         return self.visual_encoder.is_blind and self.depth_encoder.is_blind
 
-    @property
     def num_recurrent_layers(self):
-        return self.state_encoder.num_recurrent_layers
+        """
+        This is because Net interface is fixed for use with RNNs
+        :return:
+        """
+        pass
 
-    def forward(self, observations, rnn_hidden_states, prev_actions, masks):
+    def forward(self, observations, actions):
         r"""
         instruction_embedding: [batch_size x INSTRUCTION_ENCODER.output_size]
         depth_embedding: [batch_size x DEPTH_ENCODER.output_size]
         rgb_embedding: [batch_size x RGB_ENCODER.output_size]
         """
         rgb_obs = observations["rgb"]
-
-        N = rnn_hidden_states.size(1)
 
         x = []
 
@@ -180,7 +182,7 @@ class ObjectNavILMAENet(Net):
             # visual encoder
             rgb = observations["rgb"]
 
-            rgb = self.visual_transform(rgb, N)
+            rgb = self.visual_transform(rgb)
             rgb = self.visual_encoder(rgb)
             rgb = self.visual_fc(rgb)
             x.append(rgb)
@@ -217,47 +219,107 @@ class ObjectNavILMAENet(Net):
                 )
             x.append(self.obj_categories_embedding(object_goal).squeeze(dim=1))
 
-        if self.policy_config.SEQ2SEQ.use_prev_action:
-            prev_actions_embedding = self.prev_action_embedding(
-                ((prev_actions.float() + 1) * masks).long().view(-1)
+        if self.policy_config.SEQ2SEQ.use_action and self.use_actions:
+            actions_embedding = self.action_embedding(
+                actions.float().long().view(-1)
             )
-            x.append(prev_actions_embedding)
+            x.append(actions_embedding)
 
         x = torch.cat(x, dim=1)
 
-        x, rnn_hidden_states = self.state_encoder(
-            x, rnn_hidden_states.contiguous(), masks
+        x = self.state_encoder(
+            x
         )
 
-        return x, rnn_hidden_states
+        return x
+
+
+class ObjectPolicyNet(ObjectNavQNet):
+    def __init__(self,
+                 observation_space: Space,
+                 policy_config: Config,
+                 num_actions: int,
+                 run_type: str,
+                 use_actions: bool = False,
+                 min_log_std=None,
+                 max_log_std=None
+                 ):
+        super().__init__(
+            observation_space,
+            policy_config,
+            num_actions,
+            run_type,
+            use_actions,
+            output_activation=nn.Tanh,
+        )
+        self.log_std_logits = nn.Parameter()
+        self.min_log_std = min_log_std
+        self.max_log_std = max_log_std
+
+    def forward(self, observations, actions):
+        mean = super().forward(observations, actions)
+        log_std = torch.sigmoid(self.log_std_logits)
+        log_std = self.min_log_std + log_std * (
+                self.max_log_std - self.min_log_std)
+        std = torch.exp(log_std)
+        return mean, std
 
 
 @baseline_registry.register_policy
-class ObjectNavILMAEPolicy(ILPolicy):
+class ObjectNavIQLPolicy(IQLPolicy):
     def __init__(
-        self,
-        observation_space: Space,
-        action_space: Space,
-        policy_config: Config,
-        run_type: str,
-        hidden_size: int,
-        rnn_type: str,
-        num_recurrent_layers: int,
+            self,
+            observation_space: Space,
+            action_space: Space,
+            policy_config: Config,
+            run_type: str,
     ):
         super().__init__(
-            ObjectNavILMAENet(
+            ObjectPolicyNet(
                 observation_space=observation_space,
                 policy_config=policy_config,
                 num_actions=action_space.n,
                 run_type=run_type,
-                hidden_size=hidden_size,
-                rnn_type=rnn_type,
-                num_recurrent_layers=num_recurrent_layers,
+                use_actions=False,
+                min_log_std=-6,
+                max_log_std=0
             ),
             action_space.n,
-            no_critic=policy_config.CRITIC.no_critic,
-            mlp_critic=policy_config.CRITIC.mlp_critic,
-            critic_hidden_dim=policy_config.CRITIC.hidden_dim,
+        )
+        self.qf1 = ObjectNavQNet(
+            observation_space=observation_space,
+            policy_config=policy_config,
+            num_actions=action_space.n,
+            run_type=run_type,
+            use_actions=True
+        )
+        self.qf2 = ObjectNavQNet(
+            observation_space=observation_space,
+            policy_config=policy_config,
+            num_actions=action_space.n,
+            run_type=run_type,
+            use_actions=True
+        )
+        self.target_qf1 = ObjectNavQNet(
+            observation_space=observation_space,
+            policy_config=policy_config,
+            num_actions=action_space.n,
+            run_type=run_type,
+            use_actions=True
+        )
+        self.target_qf2 = ObjectNavQNet(
+            observation_space=observation_space,
+            policy_config=policy_config,
+            num_actions=action_space.n,
+            run_type=run_type,
+            use_actions=True
+        )
+        self.vf = ObjectNavQNet(
+            observation_space=observation_space,
+            policy_config=policy_config,
+            num_actions=action_space.n,
+            run_type=run_type,
+            use_actions=False
         )
 
     @classmethod
@@ -267,9 +329,6 @@ class ObjectNavILMAEPolicy(ILPolicy):
             action_space=action_space,
             policy_config=config.POLICY,
             run_type=config.RUN_TYPE,
-            hidden_size=config.POLICY.STATE_ENCODER.hidden_size,
-            rnn_type=config.POLICY.STATE_ENCODER.rnn_type,
-            num_recurrent_layers=config.POLICY.STATE_ENCODER.num_recurrent_layers,
         )
 
     @property

@@ -151,7 +151,7 @@ class RolloutStorage:
         self.current_rollout_step_idxs[buffer_index] += 1
 
     def after_update(self, rnn_hidden_states):
-        self.recurrent_hidden_states[0:1] = rnn_hidden_states
+        # self.recurrent_hidden_states[0:1] = rnn_hidden_states
 
         self.buffers[0] = self.buffers[self.current_rollout_step_idx]
 
@@ -178,6 +178,7 @@ class RolloutStorage:
             )
         for inds in torch.arange(num_environments).chunk(num_mini_batch):
             batch = self.buffers[0: self.current_rollout_step_idx, inds]
+            batch["next_observations"] = self.buffers['observations'][1: self.current_rollout_step_idx+1, inds]
             batch["recurrent_hidden_states"] = self.recurrent_hidden_states[
                 0:1, inds
             ]

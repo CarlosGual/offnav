@@ -14,7 +14,7 @@ from habitat import logger
 from habitat.config import Config
 from habitat_baselines.common.baseline_registry import baseline_registry
 
-from pirlnav.config import get_config
+from offnav.config import get_config
 
 
 def main():

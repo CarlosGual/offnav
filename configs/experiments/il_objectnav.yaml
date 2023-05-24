@@ -7,8 +7,8 @@ VIDEO_OPTION: []
 TENSORBOARD_DIR: "tb"
 VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
-EVAL_CKPT_PATH_DIR: "data/new_checkpoints/params.pkl"
-NUM_ENVIRONMENTS: 8
+EVAL_CKPT_PATH_DIR: "data/new_checkpoints"
+NUM_ENVIRONMENTS: 2
 CHECKPOINT_FOLDER: "data/new_checkpoints"
 TRAINER_NAME: "offnav"
 SENSORS: ["RGB_SENSOR"]
@@ -24,7 +24,7 @@ EVAL:
 
 IL:
   POLICY:
-    name: "ObjectNavILMAEPolicy"
+    name: "ObjectNavIQLPolicy"
 
 RL:
   SUCCESS_REWARD: 2.5

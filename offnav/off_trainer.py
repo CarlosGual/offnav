@@ -60,11 +60,11 @@ class OffEnvDDTrainer(PPOTrainer):
     def __init__(self, config=None):
         super().__init__(config)
 
-    def _setup_actor_critic_agent(self, il_cfg: Config) -> None:
-        r"""Sets up actor critic and agent for IL.
+    def _setup_actor_critic_agent(self, off_cfg: Config) -> None:
+        r"""Sets up actor critic and agent for Offline RL.
 
         Args:
-            il_cfg: config node with relevant params
+            off_cfg: config node with relevant params
 
         Returns:
             None
@@ -87,13 +87,11 @@ class OffEnvDDTrainer(PPOTrainer):
         self.agent = OffIQLAgent(
             actor_critic=self.actor_critic,
             num_envs=self.envs.num_envs,
-            num_mini_batch=il_cfg.num_mini_batch,
-            lr=il_cfg.lr,
-            encoder_lr=il_cfg.encoder_lr,
-            eps=il_cfg.eps,
-            max_grad_norm=il_cfg.max_grad_norm,
-            wd=il_cfg.wd,
-            entropy_coef=il_cfg.entropy_coef,
+            num_mini_batch=off_cfg.num_mini_batch,
+            policy_update_period=1,
+            q_update_period=1,
+            target_update_period=1,
+            eps=off_cfg.eps,
         )
 
     def _init_train(self):
@@ -210,7 +208,6 @@ class OffEnvDDTrainer(PPOTrainer):
             obs_space,
             self.policy_action_space,
             policy_cfg.STATE_ENCODER.hidden_size,
-            num_recurrent_layers=self.actor_critic.net.num_recurrent_layers,
             is_double_buffered=il_cfg.use_double_buffered_sampler,
             action_shape=action_shape,
             discrete_actions=discrete_actions,
@@ -300,7 +297,7 @@ class OffEnvDDTrainer(PPOTrainer):
             rnn_hidden_states,
             dist_entropy,
             _,
-        ) = self.agent.update(self.rollouts)
+        ) = self.agent.update(self.rollouts, self.num_steps_done)
 
         self.rollouts.after_update(rnn_hidden_states)
         self.pth_time += time.time() - t_update_model
@@ -324,7 +321,7 @@ class OffEnvDDTrainer(PPOTrainer):
         prev_time = 0
 
         lr_scheduler = LambdaLR(
-            optimizer=self.agent.optimizer,
+            optimizer=self.agent.policy_optimizer,
             lr_lambda=lambda x: 1 - self.percent_done(),
         )
 
@@ -383,7 +380,7 @@ class OffEnvDDTrainer(PPOTrainer):
                     save_resume_state(
                         dict(
                             state_dict=self.agent.state_dict(),
-                            optim_state=self.agent.optimizer.state_dict(),
+                            optim_state=self.agent.policy_optimizer.state_dict(),
                             lr_sched_state=lr_scheduler.state_dict(),
                             config=self.config,
                             requeue_stats=requeue_stats,
@@ -438,9 +435,6 @@ class OffEnvDDTrainer(PPOTrainer):
                 if self._is_distributed:
                     self.num_rollouts_done_store.add("num_done", 1)
 
-                # Save data directly as D4RL format in hdf5
-                write_dataset(self.data_writer, copy.deepcopy(self.rollouts))
-
                 (
                     action_loss,
                     dist_entropy,
@@ -474,8 +468,6 @@ class OffEnvDDTrainer(PPOTrainer):
                 profiling_wrapper.range_pop()  # train update
 
             self.envs.close()
-
-        self.data_writer.write_dataset('habitat_small.hdf5')
 
     @rank0_only
     def _training_log(
