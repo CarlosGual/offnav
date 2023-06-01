@@ -10,7 +10,6 @@ import random
 import time
 from collections import defaultdict, deque
 from typing import Any, Dict, List
-from d4rl.utils.dataset_utils import DatasetWriter
 import copy
 import numpy as np
 import torch
@@ -106,8 +105,6 @@ class ILEnvDDPTrainer(PPOTrainer):
 
         if is_slurm_batch_job():
             add_signal_handlers()
-
-        self.data_writer = DatasetWriter(hidden_state=True)
 
         # Add replay sensors
         self.config.defrost()

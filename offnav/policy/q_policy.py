@@ -258,11 +258,11 @@ class ObjectPolicyNet(ObjectNavQNet):
 
     def forward(self, observations, actions):
         mean = super().forward(observations, actions)
-        log_std = torch.sigmoid(self.log_std_logits)
-        log_std = self.min_log_std + log_std * (
-                self.max_log_std - self.min_log_std)
-        std = torch.exp(log_std)
-        return mean, std
+        # log_std = torch.sigmoid(self.log_std_logits)
+        # log_std = self.min_log_std + log_std * (
+        #         self.max_log_std - self.min_log_std)
+        # std = torch.exp(log_std)
+        return mean  # , std
 
 
 @baseline_registry.register_policy

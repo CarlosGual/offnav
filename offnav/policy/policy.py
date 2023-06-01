@@ -130,25 +130,25 @@ class IQLPolicy(nn.Module, Policy):
         super().__init__()
         self.net = net
         self.dim_actions = dim_actions
-        self.action_distribution = MultivariateDiagonalNormal
+        self.action_distribution = CategoricalNet(
+            self.net.output_size, self.dim_actions
+        )
 
     def forward(self, *x):
-        mean, std = self.net(*x)
-        distribution = self.action_distribution(mean, std)
+        mean = self.net(*x)
+        distribution = self.action_distribution(mean)
 
         return distribution
 
     def act(
         self,
         observations,
-        rnn_hidden_states,
-        prev_actions,
-        masks,
         deterministic=False,
         return_distribution=False,
+        ole=None
     ):
-        features, rnn_hidden_states = self.net(
-            observations, rnn_hidden_states, prev_actions, masks
+        features = self.net(
+            observations,  ole
         )
         distribution = self.action_distribution(features)
 
@@ -159,25 +159,7 @@ class IQLPolicy(nn.Module, Policy):
         action_log_probs = distribution.log_probs(action)
         distribution_entropy = distribution.entropy().mean()
 
-        if self.no_critic:
-            return action, rnn_hidden_states
-
-        value = self.critic(features)
-
-        if return_distribution:
-            return (
-                value,
-                action,
-                action_log_probs,
-                rnn_hidden_states,
-            )
-
-        return (
-            value,
-            action,
-            action_log_probs,
-            rnn_hidden_states,
-        )
+        return action
 
     def get_value(self, observations, rnn_hidden_states, prev_actions, masks):
         features, _ = self.net(

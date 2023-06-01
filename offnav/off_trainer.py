@@ -10,7 +10,6 @@ import random
 import time
 from collections import defaultdict, deque
 from typing import Any, Dict, List
-from d4rl.utils.dataset_utils import DatasetWriter
 import copy
 import numpy as np
 import torch
@@ -104,8 +103,6 @@ class OffEnvDDTrainer(PPOTrainer):
 
         if is_slurm_batch_job():
             add_signal_handlers()
-
-        self.data_writer = DatasetWriter(hidden_state=True)
 
         # Add replay sensors
         self.config.defrost()
@@ -286,6 +283,171 @@ class OffEnvDDTrainer(PPOTrainer):
             buffer_index=buffer_index,
         )
 
+    def _compute_actions_and_step_envs_eval(self, buffer_index: int = 0):
+        num_envs = self.envs.num_envs
+        env_slice = slice(
+            int(buffer_index * num_envs / self._nbuffers),
+            int((buffer_index + 1) * num_envs / self._nbuffers),
+        )
+
+        t_sample_action = time.time()
+        # Now the same for train evaluation
+        # sample actions
+        with torch.no_grad():
+            step_batch = self.rollouts.buffers[
+                self.rollouts.current_rollout_step_idxs[buffer_index],
+                env_slice,
+            ]
+
+            profiling_wrapper.range_push("compute actions")
+            actions = self.actor_critic.act(step_batch["observations"])
+
+        # NB: Move actions to CPU.  If CUDA tensors are
+        # sent in to env.step(), that will create CUDA contexts
+        # in the subprocesses.
+        # For backwards compatibility, we also call .item() to convert to
+        # an int
+        actions = actions.to(device="cpu")
+        self.pth_time += time.time() - t_sample_action
+
+        profiling_wrapper.range_pop()  # compute actions
+
+        t_step_env = time.time()
+
+        for index_env, act in zip(
+                range(env_slice.start, env_slice.stop), actions.unbind(0)
+        ):
+            if act.shape[0] > 1:
+                step_action = action_array_to_dict(
+                    self.policy_action_space, act
+                )
+            else:
+                step_action = act.item()
+            self.envs.async_step_at(index_env, step_action)
+
+        self.env_time += time.time() - t_step_env
+
+    def _collect_environment_result(self, buffer_index: int = 0):
+        num_envs = self.envs.num_envs
+        env_slice = slice(
+            int(buffer_index * num_envs / self._nbuffers),
+            int((buffer_index + 1) * num_envs / self._nbuffers),
+        )
+
+        t_step_env = time.time()
+        outputs = [
+            self.envs.wait_step_at(index_env)
+            for index_env in range(env_slice.start, env_slice.stop)
+        ]
+
+        observations, rewards_l, dones, infos = [
+            list(x) for x in zip(*outputs)
+        ]
+
+        self.env_time += time.time() - t_step_env
+
+        t_update_stats = time.time()
+        batch = batch_obs(
+            observations, device=self.device, cache=self._obs_batching_cache
+        )
+        batch = apply_obs_transforms_batch(batch, self.obs_transforms)  # type: ignore
+
+        rewards = torch.tensor(
+            rewards_l,
+            dtype=torch.float,
+            device=self.current_episode_reward.device,
+        )
+        rewards = rewards.unsqueeze(1)
+
+        not_done_masks = torch.tensor(
+            [[not done] for done in dones],
+            dtype=torch.bool,
+            device=self.current_episode_reward.device,
+        )
+
+        if self._static_encoder:
+            with torch.no_grad():
+                batch["visual_features"] = self._encoder(batch)
+
+        self.rollouts.insert(
+            next_observations=batch,
+            rewards=rewards,
+            next_masks=not_done_masks,
+            buffer_index=buffer_index,
+        )
+
+        self.rollouts.advance_rollout(buffer_index)
+
+        self.pth_time += time.time() - t_update_stats
+
+        return env_slice.stop - env_slice.start
+
+    def _collect_environment_result_eval(self, buffer_index: int = 0):
+        num_envs = self.envs.num_envs
+        env_slice = slice(
+            int(buffer_index * num_envs / self._nbuffers),
+            int((buffer_index + 1) * num_envs / self._nbuffers),
+        )
+
+        t_step_env = time.time()
+        outputs = [
+            self.envs.wait_step_at(index_env)
+            for index_env in range(env_slice.start, env_slice.stop)
+        ]
+
+        observations, rewards_l, dones, infos = [
+            list(x) for x in zip(*outputs)
+        ]
+
+        self.env_time += time.time() - t_step_env
+
+        t_update_stats = time.time()
+        batch = batch_obs(
+            observations, device=self.device, cache=self._obs_batching_cache
+        )
+        batch = apply_obs_transforms_batch(batch, self.obs_transforms)  # type: ignore
+
+        rewards = torch.tensor(
+            rewards_l,
+            dtype=torch.float,
+            device=self.current_episode_reward.device,
+        )
+        rewards = rewards.unsqueeze(1)
+
+        not_done_masks = torch.tensor(
+            [[not done] for done in dones],
+            dtype=torch.bool,
+            device=self.current_episode_reward.device,
+        )
+        done_masks = torch.logical_not(not_done_masks)
+
+        self.current_episode_reward[env_slice] += rewards
+        current_ep_reward = self.current_episode_reward[env_slice]
+        self.running_episode_stats["reward"][env_slice] += current_ep_reward.where(done_masks, current_ep_reward.new_zeros(()))  # type: ignore
+        self.running_episode_stats["count"][env_slice] += done_masks.float()  # type: ignore
+        for k, v_k in self._extract_scalars_from_infos(infos).items():
+            v = torch.tensor(
+                v_k,
+                dtype=torch.float,
+                device=self.current_episode_reward.device,
+            ).unsqueeze(1)
+            if k not in self.running_episode_stats:
+                self.running_episode_stats[k] = torch.zeros_like(
+                    self.running_episode_stats["count"]
+                )
+
+            self.running_episode_stats[k][env_slice] += v.where(done_masks, v.new_zeros(()))  # type: ignore
+
+        self.current_episode_reward[env_slice].masked_fill_(done_masks, 0.0)
+
+        if self._static_encoder:
+            with torch.no_grad():
+                batch["visual_features"] = self._encoder(batch)
+
+        self.pth_time += time.time() - t_update_stats
+
+        return env_slice.stop - env_slice.start
+
     @profiling_wrapper.RangeContext("_update_agent")
     def _update_agent(self):
         t_update_model = time.time()
@@ -328,7 +490,7 @@ class OffEnvDDTrainer(PPOTrainer):
         resume_state = load_resume_state(self.config)
         if resume_state is not None:
             self.agent.load_state_dict(resume_state["state_dict"])
-            self.agent.optimizer.load_state_dict(resume_state["optim_state"])
+            self.agent.policy_optimizer.load_state_dict(resume_state["optim_state"])
             lr_scheduler.load_state_dict(resume_state["lr_sched_state"])
 
             requeue_stats = resume_state["requeue_stats"]
@@ -439,6 +601,42 @@ class OffEnvDDTrainer(PPOTrainer):
                     action_loss,
                     dist_entropy,
                 ) = self._update_agent()
+
+                # Start eval phase
+                _ = self.envs.reset()
+
+                profiling_wrapper.range_push("eval loop")
+
+                profiling_wrapper.range_push("_collect_rollout_step")
+                for buffer_index in range(self._nbuffers):
+                    self._compute_actions_and_step_envs_eval(buffer_index)
+
+                for step in range(il_cfg.num_steps):
+                    is_last_step = (
+                            self.should_end_early(step + 1)
+                            or (step + 1) == il_cfg.num_steps
+                    )
+
+                    for buffer_index in range(self._nbuffers):
+                        count_steps_delta += self._collect_environment_result_eval(
+                            buffer_index
+                        )
+
+                        if (buffer_index + 1) == self._nbuffers:
+                            profiling_wrapper.range_pop()  # _collect_rollout_step
+
+                        if not is_last_step:
+                            if (buffer_index + 1) == self._nbuffers:
+                                profiling_wrapper.range_push(
+                                    "_collect_rollout_step"
+                                )
+
+                            self._compute_actions_and_step_envs_eval(buffer_index)
+
+                    if is_last_step:
+                        break
+
+                profiling_wrapper.range_pop()  # eval loop
 
                 if il_cfg.use_linear_lr_decay:
                     lr_scheduler.step()  # type: ignore
@@ -624,18 +822,19 @@ class OffEnvDDTrainer(PPOTrainer):
             self.envs.num_envs, 1, device="cpu"
         )
 
-        test_recurrent_hidden_states = torch.zeros(
-            self.config.NUM_ENVIRONMENTS,
-            self.actor_critic.net.num_recurrent_layers,
-            policy_cfg.STATE_ENCODER.hidden_size,
-            device=self.device,
-        )
-        prev_actions = torch.zeros(
-            self.config.NUM_ENVIRONMENTS,
-            *action_shape,
-            device=self.device,
-            dtype=torch.long if discrete_actions else torch.float,
-        )
+        # test_recurrent_hidden_states = torch.zeros(
+        #     self.config.NUM_ENVIRONMENTS,
+        #     self.actor_critic.net.num_recurrent_layers,
+        #     policy_cfg.STATE_ENCODER.hidden_size,
+        #     device=self.device,
+        # )
+        # prev_actions = torch.zeros(
+        #     self.config.NUM_ENVIRONMENTS,
+        #     *action_shape,
+        #     device=self.device,
+        #     dtype=torch.long if discrete_actions else torch.float,
+        # )
+
         not_done_masks = torch.zeros(
             self.config.NUM_ENVIRONMENTS,
             1,
@@ -675,30 +874,21 @@ class OffEnvDDTrainer(PPOTrainer):
             current_episodes = self.envs.current_episodes()
 
             with torch.no_grad():
-                (
-                    actions,
-                    test_recurrent_hidden_states,
-                ) = self.actor_critic.act(
-                    batch,
-                    test_recurrent_hidden_states,
-                    prev_actions,
-                    not_done_masks,
-                    deterministic=True,
-                )
+                actions = self.actor_critic.act(batch, deterministic=True)
 
-                prev_actions.copy_(actions)  # type: ignore
+                # type: ignore
             # NB: Move actions to CPU.  If CUDA tensors are
             # sent in to env.step(), that will create CUDA contexts
             # in the subprocesses.
             # For backwards compatibility, we also call .item() to convert to
             # an int
-            if actions[0].shape[0] > 1:
-                step_data = [
-                    action_array_to_dict(self.policy_action_space, a)
-                    for a in actions.to(device="cpu")
-                ]
-            else:
-                step_data = [a.item() for a in actions.to(device="cpu")]
+            # if actions[0].shape[0] > 1:
+            #     step_data = [
+            #         action_array_to_dict(self.policy_action_space, a)
+            #         for a in actions.to(device="cpu")
+            #     ]
+            # else:
+            step_data = [a.item() for a in actions.to(device="cpu")]
 
             outputs = self.envs.step(step_data)
 
@@ -779,19 +969,15 @@ class OffEnvDDTrainer(PPOTrainer):
             not_done_masks = not_done_masks.to(device=self.device)
             (
                 self.envs,
-                test_recurrent_hidden_states,
                 not_done_masks,
                 current_episode_reward,
-                prev_actions,
                 batch,
                 rgb_frames,
             ) = self._pause_envs(
                 envs_to_pause,
                 self.envs,
-                test_recurrent_hidden_states,
                 not_done_masks,
                 current_episode_reward,
-                prev_actions,
                 batch,
                 rgb_frames,
             )
