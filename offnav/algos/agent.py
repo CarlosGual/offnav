@@ -6,6 +6,7 @@
 
 from typing import Optional, Tuple, Any
 
+import numpy as np
 import torch
 from habitat import logger
 from habitat.utils import profiling_wrapper
@@ -345,16 +346,20 @@ class IQLAgent(nn.Module):
 
         # hidden_states = torch.cat(hidden_states, dim=0).detach()
 
-        total_loss_epoch /= self.num_mini_batch
-        total_entropy /= self.num_mini_batch
-        total_action_loss /= self.num_mini_batch
-
-        return (
-            total_loss_epoch,
-            hidden_states,
-            total_entropy,
-            total_action_loss,
+        # Save for statistics
+        stats = dict(
+            qf1_loss=np.mean(self.get_numpy(qf1_loss)),
+            qf2_loss=np.mean(self.get_numpy(qf2_loss)),
+            policy_loss=np.mean(self.get_numpy(policy_loss)),
+            q1_pred=np.mean(self.get_numpy(q1_pred)),
+            q2_pred=np.mean(self.get_numpy(q2_pred)),
+            q_target=np.mean(self.get_numpy(q_target)),
+            weights=np.mean(self.get_numpy(weights)),
+            adv=np.mean(self.get_numpy(adv)),
+            vf_pred=np.mean(self.get_numpy(vf_pred)),
+            vf_loss=np.mean(self.get_numpy(vf_loss)),
         )
+        return stats
 
     def before_backward(self, loss: Tensor) -> None:
         pass
@@ -369,6 +374,10 @@ class IQLAgent(nn.Module):
 
     def after_step(self) -> None:
         pass
+
+    @staticmethod
+    def get_numpy(tensor):
+        return tensor.to('cpu').detach().numpy()
 
 
 class DecentralizedDistributedMixin:

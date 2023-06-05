@@ -150,7 +150,7 @@ class RolloutStorage:
     def advance_rollout(self, buffer_index: int = 0):
         self.current_rollout_step_idxs[buffer_index] += 1
 
-    def after_update(self, rnn_hidden_states):
+    def after_update(self):
         # self.recurrent_hidden_states[0:1] = rnn_hidden_states
 
         self.buffers[0] = self.buffers[self.current_rollout_step_idx]

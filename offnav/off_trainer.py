@@ -454,21 +454,12 @@ class OffEnvDDTrainer(PPOTrainer):
 
         self.agent.train()
 
-        (
-            action_loss,
-            rnn_hidden_states,
-            dist_entropy,
-            _,
-        ) = self.agent.update(self.rollouts, self.num_steps_done)
+        stats = self.agent.update(self.rollouts, self.num_steps_done)
 
-        self.rollouts.after_update(rnn_hidden_states)
+        self.rollouts.after_update()
         self.pth_time += time.time() - t_update_model
 
-        return (
-            action_loss,
-            dist_entropy,
-        )
-
+        return stats
     @profiling_wrapper.RangeContext("train")
     def train(self) -> None:
         r"""Main method for training DD/PPO.
@@ -597,10 +588,7 @@ class OffEnvDDTrainer(PPOTrainer):
                 if self._is_distributed:
                     self.num_rollouts_done_store.add("num_done", 1)
 
-                (
-                    action_loss,
-                    dist_entropy,
-                ) = self._update_agent()
+                stats = self._update_agent()
 
                 # Start eval phase
                 _ = self.envs.reset()
@@ -643,10 +631,7 @@ class OffEnvDDTrainer(PPOTrainer):
 
                 self.num_updates_done += 1
                 losses = self._coalesce_post_step(
-                    dict(
-                        action_loss=action_loss,
-                        entropy=dist_entropy,
-                    ),
+                    stats,
                     count_steps_delta,
                 )
 

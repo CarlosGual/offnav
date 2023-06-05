@@ -4,16 +4,16 @@ ENV_NAME: "SimpleRLEnv"
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
 VIDEO_OPTION: []
-TENSORBOARD_DIR: "tb"
+TENSORBOARD_DIR: "tb/1"
 VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
 EVAL_CKPT_PATH_DIR: "data/new_checkpoints/ckpt.9.pth"
-NUM_ENVIRONMENTS: 6
+NUM_ENVIRONMENTS: 2
 CHECKPOINT_FOLDER: "data/new_checkpoints"
 TRAINER_NAME: "offnav"
 SENSORS: ["RGB_SENSOR"]
-NUM_UPDATES: 50000
-LOG_INTERVAL: 100
+NUM_UPDATES: 500000
+LOG_INTERVAL: 10
 NUM_CHECKPOINTS: 100
 # Force PyTorch to be single threaded as
 # this improves performance considerably
