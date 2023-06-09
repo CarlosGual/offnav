@@ -38,13 +38,16 @@ RUN sh /cmake-3.14.0-Linux-x86_64.sh --prefix=/opt/cmake --skip-license
 RUN ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake
 RUN cmake --version
 
-# Conda environment
-RUN conda create -n habitat python=3.9 cmake=3.14.0
-
 # Add user
-RUN useradd -u 1004 --create-home carlos
+RUN useradd -u 1001 --create-home carlos # 1001 for penelope and 1004 for DGX
 WORKDIR /home/carlos
 RUN mkdir code/
+
+# Change user
+USER carlos
+
+# Conda environment
+RUN conda create -n habitat python=3.7 cmake=3.14.0
 
 # Setup habitat-sim
 RUN git clone --depth 1 --branch v0.2.2 https://github.com/facebookresearch/habitat-sim.git
@@ -55,7 +58,7 @@ RUN /bin/bash -c ". activate habitat; pip install torch==1.12.1+cu113 torchvisio
     https://download.pytorch.org/whl/cu113"
 
 # This is to avoid breaking the offnav instalation
-RUN /bin/bash -c ". activate habitat; pip install gym==0.22.0 setuptools==50.0.0"
+RUN /bin/bash -c ". activate habitat; pip install gym==0.22.0 urllib3==1.25.11"
 
 # Install specific habitat-lab
 RUN git clone --depth 1 --branch v0.2.2 https://github.com/facebookresearch/habitat-lab.git
@@ -66,8 +69,7 @@ ENV GLOG_minloglevel=2
 ENV MAGNUM_LOG="quiet"
 ENV HABITAT_SIM_LOG=quiet
 
-# Change user
-USER carlos
+
 
 COPY entrypoint.sh /home/carlos
 ENTRYPOINT [ "/home/carlos/entrypoint.sh" ]
