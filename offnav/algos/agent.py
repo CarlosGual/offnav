@@ -262,7 +262,6 @@ class IQLAgent(nn.Module):
 
         profiling_wrapper.range_push("OFF.update epoch")
         data_generator = rollouts.recurrent_generator(self.num_mini_batch)
-        hidden_states = []
 
         for batch in data_generator:
             obs = batch["observations"]
@@ -278,7 +277,7 @@ class IQLAgent(nn.Module):
             q2_pred = self.actor_critic.qf2(obs, actions)
             target_vf_pred = self.actor_critic.vf(next_obs, actions).detach()
 
-            q_target =   + (1. - terminals) * self.discount * target_vf_pred
+            q_target = rewards + (1. - terminals) * self.discount * target_vf_pred
             q_target = q_target.detach()
             qf1_loss = self.qf_criterion(q1_pred, q_target)
             qf2_loss = self.qf_criterion(q2_pred, q_target)

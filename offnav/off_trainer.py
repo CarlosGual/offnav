@@ -364,6 +364,28 @@ class OffEnvDDTrainer(PPOTrainer):
             dtype=torch.bool,
             device=self.current_episode_reward.device,
         )
+        done_masks = torch.logical_not(not_done_masks)
+
+        self.current_episode_reward[env_slice] += rewards
+        current_ep_reward = self.current_episode_reward[env_slice]
+        self.running_episode_stats["reward"][env_slice] += current_ep_reward.where(done_masks,
+                                                                                   current_ep_reward.new_zeros(
+                                                                                       ()))  # type: ignore
+        self.running_episode_stats["count"][env_slice] += done_masks.float()  # type: ignore
+        for k, v_k in self._extract_scalars_from_infos(infos).items():
+            v = torch.tensor(
+                v_k,
+                dtype=torch.float,
+                device=self.current_episode_reward.device,
+            ).unsqueeze(1)
+            if k not in self.running_episode_stats:
+                self.running_episode_stats[k] = torch.zeros_like(
+                    self.running_episode_stats["count"]
+                )
+
+            self.running_episode_stats[k][env_slice] += v.where(done_masks, v.new_zeros(()))  # type: ignore
+
+        self.current_episode_reward[env_slice].masked_fill_(done_masks, 0.0)
 
         if self._static_encoder:
             with torch.no_grad():
@@ -589,42 +611,6 @@ class OffEnvDDTrainer(PPOTrainer):
                     self.num_rollouts_done_store.add("num_done", 1)
 
                 stats = self._update_agent()
-
-                # Start eval phase
-                _ = self.envs.reset()
-
-                profiling_wrapper.range_push("eval loop")
-
-                profiling_wrapper.range_push("_collect_rollout_step")
-                for buffer_index in range(self._nbuffers):
-                    self._compute_actions_and_step_envs_eval(buffer_index)
-
-                for step in range(il_cfg.num_steps):
-                    is_last_step = (
-                            self.should_end_early(step + 1)
-                            or (step + 1) == il_cfg.num_steps
-                    )
-
-                    for buffer_index in range(self._nbuffers):
-                        count_steps_delta += self._collect_environment_result_eval(
-                            buffer_index
-                        )
-
-                        if (buffer_index + 1) == self._nbuffers:
-                            profiling_wrapper.range_pop()  # _collect_rollout_step
-
-                        if not is_last_step:
-                            if (buffer_index + 1) == self._nbuffers:
-                                profiling_wrapper.range_push(
-                                    "_collect_rollout_step"
-                                )
-
-                            self._compute_actions_and_step_envs_eval(buffer_index)
-
-                    if is_last_step:
-                        break
-
-                profiling_wrapper.range_pop()  # eval loop
 
                 if il_cfg.use_linear_lr_decay:
                     lr_scheduler.step()  # type: ignore
