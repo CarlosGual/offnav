@@ -2,4 +2,4 @@
 
 . activate habitat
 cd ~/code/ && pip install -e .
-bash offnav/scripts/launch_training.sh
+bash scripts/launch_training.sh
