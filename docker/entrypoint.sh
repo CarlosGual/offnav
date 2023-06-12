@@ -2,4 +2,4 @@
 
 . activate habitat
 cd ~/code/ && pip install -e .
-bash scripts/1-objectnav-il.sh
+bash offnav/scripts/launch_training.sh
