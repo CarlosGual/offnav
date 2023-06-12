@@ -9,8 +9,8 @@ from torch.distributions import Distribution as TorchDistribution
 from torch.distributions import Bernoulli as TorchBernoulli
 from torch.distributions import Independent as TorchIndependent
 from torch.distributions.utils import _sum_rightmost
-from rlkit.core.eval_util import create_stats_ordered_dict
-import rlkit.torch.pytorch_util as ptu
+# from rlkit.core.eval_util import create_stats_ordered_dict
+# import rlkit.torch.pytorch_util as ptu
 import numpy as np
 from collections import OrderedDict
 
