@@ -9,13 +9,15 @@ import os
 import random
 import time
 from collections import defaultdict, deque
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union, Tuple
 import copy
 import numpy as np
 import torch
 import tqdm
 from gym import spaces
-from habitat import Config, logger
+from numpy import ndarray
+
+from habitat import Config, logger, VectorEnv
 from habitat.utils import profiling_wrapper
 from habitat.utils.render_wrapper import overlay_frame
 from habitat.utils.visualizations.utils import observations_to_image
@@ -46,7 +48,7 @@ from habitat_baselines.utils.common import (
     is_continuous_action_space,
     linear_decay,
 )
-from torch import nn as nn
+from torch import nn as nn, Tensor
 from torch.optim.lr_scheduler import LambdaLR
 
 from offnav.algos.agent import DDPILAgent, OffIQLAgent
@@ -977,3 +979,43 @@ class OffEnvDDTrainer(PPOTrainer):
             writer.add_scalar(f"eval_metrics/{k}", v, step_id)
 
         self.envs.close()
+
+    @staticmethod
+    def _pause_envs(
+            envs_to_pause: List[int],
+            envs: VectorEnv,
+            not_done_masks: Tensor,
+            current_episode_reward: Tensor,
+            batch: Dict[str, Tensor],
+            rgb_frames: Union[List[List[Any]], List[List[ndarray]]],
+    ) -> Tuple[
+        VectorEnv,
+        Tensor,
+        Tensor,
+        Dict[str, Tensor],
+        List[List[Any]],
+    ]:
+        # pausing self.envs with no new episode
+        if len(envs_to_pause) > 0:
+            state_index = list(range(envs.num_envs))
+            for idx in reversed(envs_to_pause):
+                state_index.pop(idx)
+                envs.pause_at(idx)
+
+            # indexing along the batch dimensions
+
+            not_done_masks = not_done_masks[state_index]
+            current_episode_reward = current_episode_reward[state_index]
+
+            for k, v in batch.items():
+                batch[k] = v[state_index]
+
+            rgb_frames = [rgb_frames[i] for i in state_index]
+
+        return (
+            envs,
+            not_done_masks,
+            current_episode_reward,
+            batch,
+            rgb_frames,
+        )
