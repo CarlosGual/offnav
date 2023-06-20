@@ -20,6 +20,6 @@ python -u -m torch.distributed.launch \
     TENSORBOARD_DIR $TENSORBOARD_DIR \
     CHECKPOINT_FOLDER $CHECKPOINT_DIR \
     NUM_UPDATES 100000 \
-    NUM_ENVIRONMENTS 10 \
+    NUM_ENVIRONMENTS 9 \
     RL.DDPPO.force_distributed True \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz" \
