@@ -5,8 +5,8 @@ export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
 
 config="configs/experiments/off_objectnav.yaml"
-DATA_PATH="data/datasets/objectnav/hm3d/v1"
-TENSORBOARD_DIR="tb/eval/"
+DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_minimal"
+TENSORBOARD_DIR="tb/eval_minimal/"
 CHECKPOINT_DIR="data/new_checkpoints"
 
 
@@ -19,4 +19,4 @@ python -u -m run \
     NUM_UPDATES 50000 \
     NUM_ENVIRONMENTS 16 \
     RL.DDPPO.force_distributed True \
-    TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz" \
+    TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/train/train.json.gz" \
