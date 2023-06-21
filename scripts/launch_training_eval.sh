@@ -19,4 +19,4 @@ python -u -m run \
     NUM_UPDATES 50000 \
     NUM_ENVIRONMENTS 16 \
     RL.DDPPO.force_distributed True \
-    TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/train/train.json.gz" \
+    TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz" \

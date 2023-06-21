@@ -256,10 +256,6 @@ class IQLAgent(nn.Module):
         raise NotImplementedError
 
     def update(self, rollouts, num_steps_done) -> Tuple[float, Any, float, float]:
-        total_loss_epoch = 0.0
-        total_entropy = 0.0
-        total_action_loss = 0.0
-
         profiling_wrapper.range_push("OFF.update epoch")
         data_generator = rollouts.recurrent_generator(self.num_mini_batch)
 
