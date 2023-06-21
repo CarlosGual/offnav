@@ -20,4 +20,3 @@ python -u -m run \
     NUM_ENVIRONMENTS 16 \
     RL.DDPPO.force_distributed True \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz" \
-    TASK_CONFIG.DATASET.SPLIT train \
