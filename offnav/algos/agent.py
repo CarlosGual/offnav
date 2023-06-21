@@ -266,6 +266,17 @@ class IQLAgent(nn.Module):
             next_obs = batch["next_observations"]
             terminals = torch.logical_not(batch["masks"]).float()
 
+            # Shuffle the batch data to meet DQN random criteria
+            indexes = torch.randperm(actions.shape[0])
+            actions = actions[indexes]
+            rewards = rewards[indexes]
+            terminals = terminals[indexes]
+
+            for k in obs:
+                obs[k] = obs[k][indexes]
+                next_obs[k] = next_obs[k][indexes]
+
+
             """
             QF Loss
             """
