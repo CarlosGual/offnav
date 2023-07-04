@@ -192,6 +192,85 @@ class IQLPolicy(nn.Module, Policy):
         pass
 
 
+class IQLRNNPolicy(nn.Module, Policy):
+    def __init__(
+        self,
+        net,
+        dim_actions,
+
+    ):
+        super().__init__()
+        self.net = net
+        self.dim_actions = dim_actions
+        self.action_distribution = CategoricalNet(
+            self.net.output_size, self.dim_actions
+        )
+
+    def forward(self, *x):
+        features, rnn_hidden_states = self.net(*x)
+        distribution = self.action_distribution(features)
+        distribution_entropy = distribution.entropy().mean()
+
+        return distribution, rnn_hidden_states, distribution_entropy
+
+    def act(
+        self,
+        observations,
+        rnn_hidden_states,
+        actions,
+        masks,
+        deterministic=False,
+        return_distribution=False,
+    ):
+        features, rnn_hidden_states = self.net(
+            observations, rnn_hidden_states, actions, masks
+        )
+        distribution = self.action_distribution(features)
+
+        if deterministic:
+            action = distribution.mode()
+        else:
+            action = distribution.sample()
+        action_log_probs = distribution.log_probs(action)
+        distribution_entropy = distribution.entropy().mean()
+
+        return (
+            action,
+            action_log_probs,
+            rnn_hidden_states,
+        )
+
+    def get_value(self, observations, rnn_hidden_states, actions, masks):
+        features, _ = self.net(
+            observations, rnn_hidden_states, actions, masks
+        )
+        return self.critic(features)
+
+    def evaluate_actions(
+        self, observations, rnn_hidden_states, actions, masks, action
+    ):
+        features, rnn_hidden_states = self.net(
+            observations, rnn_hidden_states, actions, masks
+        )
+        distribution = self.action_distribution(features)
+        value = self.critic(features)
+
+        action_log_probs = distribution.log_probs(action)
+        distribution_entropy = distribution.entropy().mean()
+
+        return (
+            value,
+            action_log_probs,
+            distribution_entropy,
+            rnn_hidden_states,
+        )
+
+    @classmethod
+    @abc.abstractmethod
+    def from_config(cls, config, observation_space, action_space):
+        pass
+
+
 class CriticHead(nn.Module):
     def __init__(self, input_size):
         super().__init__()

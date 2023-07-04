@@ -51,7 +51,7 @@ from habitat_baselines.utils.common import (
 from torch import nn as nn, Tensor
 from torch.optim.lr_scheduler import LambdaLR
 
-from offnav.algos.agent import DDPILAgent, OffIQLAgent
+from offnav.algos.agent import DDPILAgent, OffIQLAgent, OffIQLRNNAgent
 from offnav.common.rollout_storage import RolloutStorage
 from offnav.utils.utils import write_dataset
 
@@ -85,7 +85,7 @@ class OffEnvDDTrainer(PPOTrainer):
         )
         self.actor_critic.to(self.device)
 
-        self.agent = OffIQLAgent(
+        self.agent = OffIQLRNNAgent(
             actor_critic=self.actor_critic,
             num_envs=self.envs.num_envs,
             num_mini_batch=off_cfg.num_mini_batch,
@@ -208,6 +208,7 @@ class OffEnvDDTrainer(PPOTrainer):
             self.policy_action_space,
             policy_cfg.STATE_ENCODER.hidden_size,
             is_double_buffered=il_cfg.use_double_buffered_sampler,
+            num_recurrent_layers=self.actor_critic.net.num_recurrent_layers,
             action_shape=action_shape,
             discrete_actions=discrete_actions,
         )
@@ -478,9 +479,9 @@ class OffEnvDDTrainer(PPOTrainer):
 
         self.agent.train()
 
-        stats = self.agent.update(self.rollouts, self.num_steps_done)
+        stats, rnn_hiden_states = self.agent.update(self.rollouts, self.num_steps_done)
 
-        self.rollouts.after_update()
+        self.rollouts.after_update(rnn_hiden_states)
         self.pth_time += time.time() - t_update_model
 
         return stats

@@ -276,7 +276,6 @@ class IQLAgent(nn.Module):
                 obs[k] = obs[k][indexes]
                 next_obs[k] = next_obs[k][indexes]
 
-
             """
             QF Loss
             """
@@ -386,6 +385,216 @@ class IQLAgent(nn.Module):
         return tensor.to('cpu').detach().numpy()
 
 
+class IQLRNNAgent(nn.Module):
+    def __init__(
+            self,
+            actor_critic: nn.Module,
+            num_envs: int,
+            num_mini_batch: int,
+            policy_update_period: int,
+            q_update_period: int,
+            target_update_period: int,
+            eps: Optional[float] = None,
+            clip_score: Optional[float] = 100,
+            entropy_coef: Optional[float] = 0.0,
+            discount: Optional[float] = 0.99,
+            quantile: Optional[float] = 0.7,
+            beta: Optional[float] = 1.0 / 3,
+            policy_lr: Optional[float] = 3E-4,
+            qf_lr: Optional[float] = 3E-4,
+            policy_weight_decay: Optional[float] = 0,
+            q_weight_decay: Optional[float] = 0,
+            soft_target_tau: Optional[float] = 0.005
+    ) -> None:
+
+        super().__init__()
+
+        self.soft_target_tau = soft_target_tau
+        self.target_update_period = target_update_period
+        self.q_update_period = q_update_period
+        self.policy_update_period = policy_update_period
+        self.beta = beta
+        self.quantile = quantile
+        self.actor_critic = actor_critic
+
+        self.num_mini_batch = num_mini_batch
+
+        self.clip_score = clip_score
+        self.num_envs = num_envs
+        self.entropy_coef = entropy_coef
+        self.discount = discount
+
+        self.qf_criterion = nn.MSELoss()
+        self.vf_criterion = nn.MSELoss()
+
+        # Optimizers
+        self.policy_optimizer = optim.Adam(
+            list(
+                filter(
+                    lambda p: p.requires_grad, actor_critic.parameters()
+                )
+            ),
+            lr=policy_lr,
+            weight_decay=policy_weight_decay,
+            eps=eps,
+        )
+        self.qf1_optimizer = optim.Adam(
+            list(
+                filter(
+                    lambda p: p.requires_grad, actor_critic.qf1.parameters()
+                )
+            ),
+            lr=qf_lr,
+            weight_decay=q_weight_decay,
+            eps=eps,
+        )
+        self.qf2_optimizer = optim.Adam(
+            list(
+                filter(
+                    lambda p: p.requires_grad, actor_critic.qf2.parameters()
+                )
+            ),
+            lr=qf_lr,
+            weight_decay=q_weight_decay,
+            eps=eps,
+        )
+        self.vf_optimizer = optim.Adam(
+            list(
+                filter(
+                    lambda p: p.requires_grad, actor_critic.vf.parameters()
+                )
+            ),
+            lr=qf_lr,
+            weight_decay=q_weight_decay,
+            eps=eps,
+        )
+
+        self.device = next(actor_critic.parameters()).device
+
+    def forward(self, *x):
+        raise NotImplementedError
+
+    def update(self, rollouts, num_steps_done) -> Tuple[float, Any, float, float]:
+        profiling_wrapper.range_push("OFF.update epoch")
+        data_generator = rollouts.recurrent_generator(self.num_mini_batch)
+
+        for batch in data_generator:
+            obs = batch["observations"]
+            actions = batch["actions"]
+            rewards = batch["rewards"]
+            next_obs = batch["next_observations"]
+            masks = batch["masks"]
+            terminals = torch.logical_not(batch["masks"]).float()
+            rnn_hidden_states = batch["recurrent_hidden_states"]
+
+            # Put all predictions together
+            q1_pred, rnn_hidden_q1 = self.actor_critic.qf1(obs, rnn_hidden_states, actions, masks)
+            q2_pred, rnn_hidden_q2 = self.actor_critic.qf2(obs, rnn_hidden_states, actions, masks)
+            target_vf_pred, rnn_hidden_vf_target = self.actor_critic.vf(next_obs, rnn_hidden_states, actions, masks)
+            tq1_pred, rnn_hidden_tq1 = self.actor_critic.target_qf1(obs, rnn_hidden_states, actions, masks)
+            tq2_pred, rnn_hidden_tq2 = self.actor_critic.target_qf2(obs, rnn_hidden_states, actions, masks)
+            q_pred = torch.min(tq1_pred, tq2_pred).detach()
+            vf_pred, rnn_hidden_vf_pred = self.actor_critic.vf(obs, rnn_hidden_states, actions, masks)
+            dist, rnn_hidden_policy, entropy = self.actor_critic(obs, rnn_hidden_states, actions, masks)
+
+            """
+            QF Loss
+            """
+            q_target = rewards + (1. - terminals) * self.discount * target_vf_pred.detach()
+            q_target = q_target.detach()
+            qf1_loss = self.qf_criterion(q1_pred, q_target)
+            qf2_loss = self.qf_criterion(q2_pred, q_target)
+
+            """
+            VF Loss
+            """
+            vf_err = vf_pred - q_pred
+            vf_sign = (vf_err > 0).float()
+            vf_weight = (1 - vf_sign) * self.quantile + vf_sign * (1 - self.quantile)
+            vf_loss = (vf_weight * (vf_err ** 2)).mean()
+
+            """
+            Policy Loss
+            """
+            policy_logpp = dist.log_prob(actions)
+            adv = q_pred - vf_pred
+            exp_adv = torch.exp(adv / self.beta)
+            if self.clip_score is not None:
+                exp_adv = torch.clamp(exp_adv, max=self.clip_score)
+
+            weights = exp_adv[:, 0].detach()
+            policy_loss = (-policy_logpp * weights).mean()
+
+            """
+            Update networks
+            """
+            if num_steps_done % self.q_update_period == 0:
+                self.qf1_optimizer.zero_grad()
+                qf1_loss.backward()
+                self.qf1_optimizer.step()
+
+                self.qf2_optimizer.zero_grad()
+                qf2_loss.backward()
+                self.qf2_optimizer.step()
+
+                self.vf_optimizer.zero_grad()
+                vf_loss.backward()
+                self.vf_optimizer.step()
+
+            if num_steps_done % self.policy_update_period == 0:
+                self.policy_optimizer.zero_grad()
+                policy_loss.backward()
+                self.policy_optimizer.step()
+
+            """
+            Soft Updates
+            """
+            if num_steps_done % self.target_update_period == 0:
+                soft_update_from_to(
+                    self.actor_critic.qf1, self.actor_critic.target_qf1, self.soft_target_tau
+                )
+                soft_update_from_to(
+                    self.actor_critic.qf2, self.actor_critic.target_qf2, self.soft_target_tau
+                )
+
+        profiling_wrapper.range_pop()
+
+        # hidden_states = torch.cat(hidden_states, dim=0).detach()
+
+        # Save for statistics
+        stats = dict(
+            qf1_loss=np.mean(self.get_numpy(qf1_loss)),
+            qf2_loss=np.mean(self.get_numpy(qf2_loss)),
+            policy_loss=np.mean(self.get_numpy(policy_loss)),
+            q1_pred=np.mean(self.get_numpy(q1_pred)),
+            q2_pred=np.mean(self.get_numpy(q2_pred)),
+            q_target=np.mean(self.get_numpy(q_target)),
+            weights=np.mean(self.get_numpy(weights)),
+            adv=np.mean(self.get_numpy(adv)),
+            vf_pred=np.mean(self.get_numpy(vf_pred)),
+            vf_loss=np.mean(self.get_numpy(vf_loss)),
+        )
+        return stats, rnn_hidden_policy
+
+    def before_backward(self, loss: Tensor) -> None:
+        pass
+
+    def after_backward(self, loss: Tensor) -> None:
+        pass
+
+    def before_step(self) -> None:
+        nn.utils.clip_grad_norm_(
+            self.actor_critic.parameters(), self.max_grad_norm
+        )
+
+    def after_step(self) -> None:
+        pass
+
+    @staticmethod
+    def get_numpy(tensor):
+        return tensor.to('cpu').detach().numpy()
+
+
 class DecentralizedDistributedMixin:
     def init_distributed(self, find_unused_params: bool = True) -> None:
         r"""Initializes distributed training for the model
@@ -433,4 +642,8 @@ class DDPILAgent(DecentralizedDistributedMixin, ILAgent):
 
 
 class OffIQLAgent(DecentralizedDistributedMixin, IQLAgent):
+    pass
+
+
+class OffIQLRNNAgent(DecentralizedDistributedMixin, IQLRNNAgent):
     pass

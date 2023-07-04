@@ -20,11 +20,11 @@ NUM_CHECKPOINTS: 100
 FORCE_TORCH_SINGLE_THREADED: True
 
 EVAL:
-  SPLIT: "train"
+  SPLIT: "eval"
 
 IL:
   POLICY:
-    name: "ObjectNavIQLPolicy"
+    name: "ObjectNavIQLRNNPolicy"
 
 RL:
   SUCCESS_REWARD: 2.5

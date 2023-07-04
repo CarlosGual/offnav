@@ -435,9 +435,6 @@ class ILEnvDDPTrainer(PPOTrainer):
                 if self._is_distributed:
                     self.num_rollouts_done_store.add("num_done", 1)
 
-                # Save data directly as D4RL format in hdf5
-                write_dataset(self.data_writer, copy.deepcopy(self.rollouts))
-
                 (
                     action_loss,
                     dist_entropy,
