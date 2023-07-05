@@ -9,6 +9,7 @@ from habitat_baselines.rl.models.rnn_state_encoder import build_rnn_state_encode
 from habitat_baselines.rl.ppo import Net
 
 from offnav.policy.policy import ILPolicy, IQLPolicy, IQLRNNPolicy, CriticHead, MLPCriticHead
+from offnav.policy.q_policy import ObjectNavQNet
 from offnav.policy.transforms import get_transform
 from offnav.policy.visual_encoder import VisualEncoder
 from offnav.utils.utils import load_encoder
@@ -313,16 +314,16 @@ class ObjectNavIQLRNNPolicy(IQLRNNPolicy):
             rnn_type=rnn_type,
             num_recurrent_layers=num_recurrent_layers,
         )
-        self.qf2 = ObjectNavQRNNNet(
-            observation_space=observation_space,
-            policy_config=policy_config,
-            num_actions=action_space.n,
-            run_type=run_type,
-            use_actions=True,
-            hidden_size=hidden_size,
-            rnn_type=rnn_type,
-            num_recurrent_layers=num_recurrent_layers,
-        )
+        # self.qf2 = ObjectNavQRNNNet(
+        #     observation_space=observation_space,
+        #     policy_config=policy_config,
+        #     num_actions=action_space.n,
+        #     run_type=run_type,
+        #     use_actions=True,
+        #     hidden_size=hidden_size,
+        #     rnn_type=rnn_type,
+        #     num_recurrent_layers=num_recurrent_layers,
+        # )
         self.target_qf1 = ObjectNavQRNNNet(
             observation_space=observation_space,
             policy_config=policy_config,
@@ -333,25 +334,22 @@ class ObjectNavIQLRNNPolicy(IQLRNNPolicy):
             rnn_type=rnn_type,
             num_recurrent_layers=num_recurrent_layers,
         )
-        self.target_qf2 = ObjectNavQRNNNet(
+        # self.target_qf2 = ObjectNavQRNNNet(
+        #     observation_space=observation_space,
+        #     policy_config=policy_config,
+        #     num_actions=action_space.n,
+        #     run_type=run_type,
+        #     use_actions=True,
+        #     hidden_size=hidden_size,
+        #     rnn_type=rnn_type,
+        #     num_recurrent_layers=num_recurrent_layers,
+        # )
+        self.vf = ObjectNavQNet(
             observation_space=observation_space,
             policy_config=policy_config,
             num_actions=action_space.n,
             run_type=run_type,
-            use_actions=True,
-            hidden_size=hidden_size,
-            rnn_type=rnn_type,
-            num_recurrent_layers=num_recurrent_layers,
-        )
-        self.vf = ObjectNavQRNNNet(
-            observation_space=observation_space,
-            policy_config=policy_config,
-            num_actions=action_space.n,
-            run_type=run_type,
-            use_actions=False,
-            hidden_size=hidden_size,
-            rnn_type=rnn_type,
-            num_recurrent_layers=num_recurrent_layers,
+            use_actions=False
         )
 
     @classmethod

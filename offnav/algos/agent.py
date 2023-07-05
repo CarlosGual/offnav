@@ -448,16 +448,16 @@ class IQLRNNAgent(nn.Module):
             weight_decay=q_weight_decay,
             eps=eps,
         )
-        self.qf2_optimizer = optim.Adam(
-            list(
-                filter(
-                    lambda p: p.requires_grad, actor_critic.qf2.parameters()
-                )
-            ),
-            lr=qf_lr,
-            weight_decay=q_weight_decay,
-            eps=eps,
-        )
+        # self.qf2_optimizer = optim.Adam(
+        #     list(
+        #         filter(
+        #             lambda p: p.requires_grad, actor_critic.qf2.parameters()
+        #         )
+        #     ),
+        #     lr=qf_lr,
+        #     weight_decay=q_weight_decay,
+        #     eps=eps,
+        # )
         self.vf_optimizer = optim.Adam(
             list(
                 filter(
@@ -477,6 +477,17 @@ class IQLRNNAgent(nn.Module):
     def update(self, rollouts, num_steps_done) -> Tuple[float, Any, float, float]:
         profiling_wrapper.range_push("OFF.update epoch")
         data_generator = rollouts.recurrent_generator(self.num_mini_batch)
+        hidden_states_qf1 = []
+        hidden_states_tqf1 = []
+        hidden_states_policy = []
+        total_qf1_loss = 0.0
+        total_policy_loss = 0.0
+        total_q1_pred = 0.0
+        total_q_target = 0.0
+        total_weights = 0.0
+        total_adv = 0.0
+        total_vf_pred = 0.0
+        total_vf_loss = 0.0
 
         for batch in data_generator:
             obs = batch["observations"]
@@ -488,22 +499,22 @@ class IQLRNNAgent(nn.Module):
             rnn_hidden_states = batch["recurrent_hidden_states"]
 
             # Put all predictions together
-            q1_pred, rnn_hidden_q1 = self.actor_critic.qf1(obs, rnn_hidden_states, actions, masks)
-            q2_pred, rnn_hidden_q2 = self.actor_critic.qf2(obs, rnn_hidden_states, actions, masks)
-            target_vf_pred, rnn_hidden_vf_target = self.actor_critic.vf(next_obs, rnn_hidden_states, actions, masks)
-            tq1_pred, rnn_hidden_tq1 = self.actor_critic.target_qf1(obs, rnn_hidden_states, actions, masks)
-            tq2_pred, rnn_hidden_tq2 = self.actor_critic.target_qf2(obs, rnn_hidden_states, actions, masks)
-            q_pred = torch.min(tq1_pred, tq2_pred).detach()
-            vf_pred, rnn_hidden_vf_pred = self.actor_critic.vf(obs, rnn_hidden_states, actions, masks)
-            dist, rnn_hidden_policy, entropy = self.actor_critic(obs, rnn_hidden_states, actions, masks)
+            q1_pred, rnn_hidden_q1 = self.actor_critic.qf1(obs, rnn_hidden_states['qf1'], actions, masks)
+            # q2_pred, rnn_hidden_q2 = self.actor_critic.qf2(obs, rnn_hidden_states, actions, masks)
+            target_vf_pred = self.actor_critic.vf(next_obs, actions).detach()
+            tq1_pred, rnn_hidden_tq1 = self.actor_critic.target_qf1(obs, rnn_hidden_states['tqf1'], actions, masks)
+            # tq2_pred, rnn_hidden_tq2 = self.actor_critic.target_qf2(obs, rnn_hidden_states, actions, masks)
+            q_pred = tq1_pred.detach()
+            vf_pred = self.actor_critic.vf(obs, actions)
+            dist, rnn_hidden_policy, entropy = self.actor_critic(obs, rnn_hidden_states['policy'], actions, masks)
 
             """
             QF Loss
             """
-            q_target = rewards + (1. - terminals) * self.discount * target_vf_pred.detach()
-            q_target = q_target.detach()
+            q_target = rewards + (1. - terminals) * self.discount * target_vf_pred
+            # q_target = q_target.detach()
             qf1_loss = self.qf_criterion(q1_pred, q_target)
-            qf2_loss = self.qf_criterion(q2_pred, q_target)
+            # qf2_loss = self.qf_criterion(q2_pred, q_target)
 
             """
             VF Loss
@@ -533,9 +544,9 @@ class IQLRNNAgent(nn.Module):
                 qf1_loss.backward()
                 self.qf1_optimizer.step()
 
-                self.qf2_optimizer.zero_grad()
-                qf2_loss.backward()
-                self.qf2_optimizer.step()
+                # self.qf2_optimizer.zero_grad()
+                # qf2_loss.backward()
+                # self.qf2_optimizer.step()
 
                 self.vf_optimizer.zero_grad()
                 vf_loss.backward()
@@ -553,28 +564,57 @@ class IQLRNNAgent(nn.Module):
                 soft_update_from_to(
                     self.actor_critic.qf1, self.actor_critic.target_qf1, self.soft_target_tau
                 )
-                soft_update_from_to(
-                    self.actor_critic.qf2, self.actor_critic.target_qf2, self.soft_target_tau
-                )
+                # soft_update_from_to(
+                #     self.actor_critic.qf2, self.actor_critic.target_qf2, self.soft_target_tau
+                # )
+
+            hidden_states_qf1.append(rnn_hidden_q1)
+            hidden_states_tqf1.append(rnn_hidden_tq1)
+            hidden_states_policy.append(rnn_hidden_policy)
+            total_qf1_loss += qf1_loss.item()
+            total_policy_loss += policy_loss.item()
+            total_q1_pred += q1_pred.mean().item()
+            total_q_target += q_target.mean().item()
+            total_weights += weights.mean().item()
+            total_adv += adv.mean().item()
+            total_vf_pred += vf_pred.mean().item()
+            total_vf_loss += vf_loss.mean().item()
 
         profiling_wrapper.range_pop()
 
-        # hidden_states = torch.cat(hidden_states, dim=0).detach()
+        hidden_states_qf1 = torch.cat(hidden_states_qf1, dim=0).detach()
+        hidden_states_tqf1 = torch.cat(hidden_states_tqf1, dim=0).detach()
+        hidden_states_policy = torch.cat(hidden_states_policy, dim=0).detach()
+        total_qf1_loss /= self.num_mini_batch
+        total_policy_loss /= self.num_mini_batch
+        total_q1_pred /= self.num_mini_batch
+        total_q_target /= self.num_mini_batch
+        total_weights /= self.num_mini_batch
+        total_adv /= self.num_mini_batch
+        total_vf_pred /= self.num_mini_batch
+        total_vf_loss /= self.num_mini_batch
+
+        # Save hidden state dict
+        hidden_states = dict(
+            qf1=hidden_states_qf1,
+            tqf1=hidden_states_tqf1,
+            policy=hidden_states_policy,
+        )
 
         # Save for statistics
         stats = dict(
-            qf1_loss=np.mean(self.get_numpy(qf1_loss)),
-            qf2_loss=np.mean(self.get_numpy(qf2_loss)),
-            policy_loss=np.mean(self.get_numpy(policy_loss)),
-            q1_pred=np.mean(self.get_numpy(q1_pred)),
-            q2_pred=np.mean(self.get_numpy(q2_pred)),
-            q_target=np.mean(self.get_numpy(q_target)),
-            weights=np.mean(self.get_numpy(weights)),
-            adv=np.mean(self.get_numpy(adv)),
-            vf_pred=np.mean(self.get_numpy(vf_pred)),
-            vf_loss=np.mean(self.get_numpy(vf_loss)),
+            qf1_loss=total_qf1_loss,
+            # qf2_loss=np.mean(self.get_numpy(qf2_loss)),
+            policy_loss=total_policy_loss,
+            q1_pred=total_q1_pred,
+            # q2_pred=np.mean(self.get_numpy(q2_pred)),
+            q_target=total_q_target,
+            weights=total_weights,
+            adv=total_adv,
+            vf_pred=total_vf_pred,
+            vf_loss=total_vf_loss,
         )
-        return stats, rnn_hidden_policy
+        return stats, hidden_states
 
     def before_backward(self, loss: Tensor) -> None:
         pass

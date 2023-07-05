@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import warnings
-from typing import Iterator, Optional, Tuple
+from typing import Iterator, Optional, Tuple, Dict
 
 import numpy as np
 import torch
@@ -16,16 +16,16 @@ class RolloutStorage:
     r"""Class for storing rollout information for RL trainers."""
 
     def __init__(
-        self,
-        numsteps,
-        num_envs,
-        observation_space,
-        action_space,
-        recurrent_hidden_state_size,
-        num_recurrent_layers=1,
-        action_shape: Optional[Tuple[int]] = None,
-        is_double_buffered: bool = False,
-        discrete_actions: bool = True,
+            self,
+            numsteps,
+            num_envs,
+            observation_space,
+            action_space,
+            recurrent_hidden_state_size,
+            num_recurrent_layers=1,
+            action_shape: Optional[Tuple[int]] = None,
+            is_double_buffered: bool = False,
+            discrete_actions: bool = True,
     ):
         self.buffers = TensorDict()
         self.buffers["observations"] = TensorDict()
@@ -42,11 +42,10 @@ class RolloutStorage:
                 )
             )
 
-        self.recurrent_hidden_states = torch.zeros(
-            1,
-            num_envs,
-            num_recurrent_layers,
-            recurrent_hidden_state_size,
+        self.recurrent_hidden_states = TensorDict(
+            qf1=torch.zeros(1, num_envs, num_recurrent_layers, recurrent_hidden_state_size),
+            tqf1=torch.zeros(1, num_envs, num_recurrent_layers, recurrent_hidden_state_size),
+            policy=torch.zeros(1, num_envs, num_recurrent_layers, recurrent_hidden_state_size),
         )
 
         self.buffers["rewards"] = torch.zeros(numsteps + 1, num_envs, 1)
@@ -70,8 +69,8 @@ class RolloutStorage:
             numsteps + 1, num_envs, *action_shape
         )
         if (
-            discrete_actions
-            and action_space.__class__.__name__ == "ActionSpace"
+                discrete_actions
+                and action_space.__class__.__name__ == "ActionSpace"
         ):
             assert isinstance(self.buffers["actions"], torch.Tensor)
             assert isinstance(self.buffers["prev_actions"], torch.Tensor)
@@ -101,15 +100,15 @@ class RolloutStorage:
 
     def to(self, device):
         self.buffers.map_in_place(lambda v: v.to(device))
-        self.recurrent_hidden_states = self.recurrent_hidden_states.to(device)
+        self.recurrent_hidden_states.map_in_place(lambda v: v.to(device))
 
     def insert(
-        self,
-        next_observations=None,
-        actions=None,
-        rewards=None,
-        next_masks=None,
-        buffer_index: int = 0,
+            self,
+            next_observations=None,
+            actions=None,
+            rewards=None,
+            next_masks=None,
+            buffer_index: int = 0,
     ):
         if not self.is_double_buffered:
             assert buffer_index == 0
@@ -150,8 +149,10 @@ class RolloutStorage:
     def advance_rollout(self, buffer_index: int = 0):
         self.current_rollout_step_idxs[buffer_index] += 1
 
-    def after_update(self, rnn_hidden_states: TensorDict):
-        self.recurrent_hidden_states[0:1] = rnn_hidden_states
+    def after_update(self, rnn_hidden_states: Dict):
+        for k in self.recurrent_hidden_states:
+            self.recurrent_hidden_states[k][0:1] = rnn_hidden_states[k]
+        # self.recurrent_hidden_states[0:1] = rnn_hidden_states
 
         self.buffers[0] = self.buffers[self.current_rollout_step_idx]
 
@@ -178,9 +179,10 @@ class RolloutStorage:
             )
         for inds in torch.arange(num_environments).chunk(num_mini_batch):
             batch = self.buffers[0: self.current_rollout_step_idx, inds]
-            batch["next_observations"] = self.buffers['observations'][1: self.current_rollout_step_idx+1, inds]
-            batch["recurrent_hidden_states"] = self.recurrent_hidden_states[
-                0:1, inds
-            ]
+            batch["next_observations"] = self.buffers['observations'][1: self.current_rollout_step_idx + 1, inds]
+            temp_dict = {}
+            for k in self.recurrent_hidden_states:
+                temp_dict[k] = self.recurrent_hidden_states[k][0:1, inds]
+            batch["recurrent_hidden_states"] = temp_dict
 
             yield batch.map(lambda v: v.flatten(0, 1))
