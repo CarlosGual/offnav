@@ -6,7 +6,7 @@ export HABITAT_SIM_LOG=quiet
 
 config="configs/experiments/off_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_minimal"
-TENSORBOARD_DIR="tb/rnn/"
+TENSORBOARD_DIR="tb/rnn/first_trial"
 CHECKPOINT_DIR="data/new_checkpoints"
 
 
@@ -19,7 +19,7 @@ python -u -m torch.distributed.launch \
     --run-type train \
     TENSORBOARD_DIR $TENSORBOARD_DIR \
     CHECKPOINT_FOLDER $CHECKPOINT_DIR \
-    NUM_UPDATES 100000 \
-    NUM_ENVIRONMENTS 4 \
+    NUM_UPDATES 50000 \
+    NUM_ENVIRONMENTS 8 \
     RL.DDPPO.force_distributed True \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz" \
