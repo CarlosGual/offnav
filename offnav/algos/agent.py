@@ -480,6 +480,7 @@ class IQLRNNAgent(nn.Module):
         hidden_states_qf1 = []
         hidden_states_tqf1 = []
         hidden_states_policy = []
+        total_actions = []
         total_qf1_loss = 0.0
         total_policy_loss = 0.0
         total_q1_pred = 0.0
@@ -512,7 +513,7 @@ class IQLRNNAgent(nn.Module):
             QF Loss
             """
             q_target = rewards + (1. - terminals) * self.discount * target_vf_pred
-            # q_target = q_target.detach()
+            q_target = q_target.detach()
             qf1_loss = self.qf_criterion(q1_pred, q_target)
             # qf2_loss = self.qf_criterion(q2_pred, q_target)
 
@@ -528,6 +529,7 @@ class IQLRNNAgent(nn.Module):
             Policy Loss
             """
             policy_logpp = dist.log_prob(actions)
+            selected_actions = dist.sample().detach().cpu().numpy()
             adv = q_pred - vf_pred
             exp_adv = torch.exp(adv / self.beta)
             if self.clip_score is not None:
@@ -571,6 +573,7 @@ class IQLRNNAgent(nn.Module):
             hidden_states_qf1.append(rnn_hidden_q1)
             hidden_states_tqf1.append(rnn_hidden_tq1)
             hidden_states_policy.append(rnn_hidden_policy)
+            total_actions.append(selected_actions.squeeze(1))
             total_qf1_loss += qf1_loss.item()
             total_policy_loss += policy_loss.item()
             total_q1_pred += q1_pred.mean().item()
@@ -614,7 +617,7 @@ class IQLRNNAgent(nn.Module):
             vf_pred=total_vf_pred,
             vf_loss=total_vf_loss,
         )
-        return stats, hidden_states
+        return stats, hidden_states, np.array(total_actions, dtype=np.int)
 
     def before_backward(self, loss: Tensor) -> None:
         pass
@@ -623,9 +626,10 @@ class IQLRNNAgent(nn.Module):
         pass
 
     def before_step(self) -> None:
-        nn.utils.clip_grad_norm_(
-            self.actor_critic.parameters(), self.max_grad_norm
-        )
+        # nn.utils.clip_grad_norm_(
+        #     self.actor_critic.parameters(), self.max_grad_norm
+        # )
+        pass
 
     def after_step(self) -> None:
         pass

@@ -129,7 +129,7 @@ class OffEnvDDTrainer(PPOTrainer):
             self.config.SIMULATOR_GPU_ID = local_rank
             # Multiply by the number of simulators to make sure they also get unique seeds
             self.config.TASK_CONFIG.SEED += (
-                torch.distributed.get_rank() * self.config.NUM_ENVIRONMENTS
+                    torch.distributed.get_rank() * self.config.NUM_ENVIRONMENTS
             )
             self.config.freeze()
 
@@ -269,7 +269,7 @@ class OffEnvDDTrainer(PPOTrainer):
         t_step_env = time.time()
 
         for index_env, act in zip(
-            range(env_slice.start, env_slice.stop), actions.unbind(0)
+                range(env_slice.start, env_slice.stop), actions.unbind(0)
         ):
             if act.shape[0] > 1:
                 step_action = action_array_to_dict(
@@ -448,7 +448,9 @@ class OffEnvDDTrainer(PPOTrainer):
 
         self.current_episode_reward[env_slice] += rewards
         current_ep_reward = self.current_episode_reward[env_slice]
-        self.running_episode_stats["reward"][env_slice] += current_ep_reward.where(done_masks, current_ep_reward.new_zeros(()))  # type: ignore
+        self.running_episode_stats["reward"][env_slice] += current_ep_reward.where(done_masks,
+                                                                                   current_ep_reward.new_zeros(
+                                                                                       ()))  # type: ignore
         self.running_episode_stats["count"][env_slice] += done_masks.float()  # type: ignore
         for k, v_k in self._extract_scalars_from_infos(infos).items():
             v = torch.tensor(
@@ -479,12 +481,13 @@ class OffEnvDDTrainer(PPOTrainer):
 
         self.agent.train()
 
-        stats, rnn_hiden_states = self.agent.update(self.rollouts, self.num_steps_done)
+        stats, rnn_hiden_states, actions = self.agent.update(self.rollouts, self.num_steps_done)
 
         self.rollouts.after_update(rnn_hiden_states)
         self.pth_time += time.time() - t_update_model
 
-        return stats
+        return stats, actions
+
     @profiling_wrapper.RangeContext("train")
     def train(self) -> None:
         r"""Main method for training DD/PPO.
@@ -529,9 +532,9 @@ class OffEnvDDTrainer(PPOTrainer):
         il_cfg = self.config.IL.BehaviorCloning
 
         with (
-            get_writer(self.config, flush_secs=self.flush_secs)
-            if rank0_only()
-            else contextlib.suppress()
+                get_writer(self.config, flush_secs=self.flush_secs)
+                if rank0_only()
+                else contextlib.suppress()
         ) as writer:
             while not self.is_done():
                 profiling_wrapper.on_start_step()
@@ -539,7 +542,7 @@ class OffEnvDDTrainer(PPOTrainer):
 
                 if il_cfg.use_linear_clip_decay:
                     self.agent.clip_param = il_cfg.clip_param * (
-                        1 - self.percent_done()
+                            1 - self.percent_done()
                     )
 
                 if rank0_only() and self._should_save_resume_state():
@@ -585,8 +588,8 @@ class OffEnvDDTrainer(PPOTrainer):
 
                 for step in range(il_cfg.num_steps):
                     is_last_step = (
-                        self.should_end_early(step + 1)
-                        or (step + 1) == il_cfg.num_steps
+                            self.should_end_early(step + 1)
+                            or (step + 1) == il_cfg.num_steps
                     )
 
                     for buffer_index in range(self._nbuffers):
@@ -613,7 +616,7 @@ class OffEnvDDTrainer(PPOTrainer):
                 if self._is_distributed:
                     self.num_rollouts_done_store.add("num_done", 1)
 
-                stats = self._update_agent()
+                stats, actions = self._update_agent()
 
                 if il_cfg.use_linear_lr_decay:
                     lr_scheduler.step()  # type: ignore
@@ -624,7 +627,7 @@ class OffEnvDDTrainer(PPOTrainer):
                     count_steps_delta,
                 )
 
-                self._training_log(writer, losses, prev_time)
+                self._training_log(writer, losses, prev_time, actions)
 
                 # checkpoint model
                 if rank0_only() and self.should_checkpoint():
@@ -643,7 +646,7 @@ class OffEnvDDTrainer(PPOTrainer):
 
     @rank0_only
     def _training_log(
-        self, writer, losses: Dict[str, float], prev_time: int = 0
+            self, writer, losses: Dict[str, float], prev_time: int = 0, dist=None
     ):
         deltas = {
             k: (
@@ -676,6 +679,10 @@ class OffEnvDDTrainer(PPOTrainer):
 
         fps = self.num_steps_done / ((time.time() - self.t_start) + prev_time)
         writer.add_scalar("metrics/fps", fps, self.num_steps_done)
+
+        # Add action distribution
+        if dist is not None:
+            writer.add_histogram(f"distributions/action_distribution", dist, self.num_steps_done)
 
         # log stats
         if self.num_updates_done % self.config.LOG_INTERVAL == 0:
@@ -711,10 +718,10 @@ class OffEnvDDTrainer(PPOTrainer):
             )
 
     def _eval_checkpoint(
-        self,
-        checkpoint_path: str,
-        writer: TensorboardWriter,
-        checkpoint_index: int = 0,
+            self,
+            checkpoint_path: str,
+            writer: TensorboardWriter,
+            checkpoint_index: int = 0,
     ) -> None:
         r"""Evaluates a single checkpoint.
 
@@ -747,8 +754,8 @@ class OffEnvDDTrainer(PPOTrainer):
         config.freeze()
 
         if (
-            len(self.config.VIDEO_OPTION) > 0
-            and self.config.VIDEO_RENDER_TOP_DOWN
+                len(self.config.VIDEO_OPTION) > 0
+                and self.config.VIDEO_RENDER_TOP_DOWN
         ):
             config.defrost()
             config.TASK_CONFIG.TASK.MEASUREMENTS.append("TOP_DOWN_MAP")
@@ -796,12 +803,12 @@ class OffEnvDDTrainer(PPOTrainer):
             self.envs.num_envs, 1, device="cpu"
         )
 
-        # test_recurrent_hidden_states = torch.zeros(
-        #     self.config.NUM_ENVIRONMENTS,
-        #     self.actor_critic.net.num_recurrent_layers,
-        #     policy_cfg.STATE_ENCODER.hidden_size,
-        #     device=self.device,
-        # )
+        test_recurrent_hidden_states = torch.zeros(
+            self.config.NUM_ENVIRONMENTS,
+            self.actor_critic.net.num_recurrent_layers,
+            policy_cfg.STATE_ENCODER.hidden_size,
+            device=self.device,
+        )
         # prev_actions = torch.zeros(
         #     self.config.NUM_ENVIRONMENTS,
         #     *action_shape,
@@ -842,27 +849,36 @@ class OffEnvDDTrainer(PPOTrainer):
         logger.info("Sampling actions deterministically...")
         self.actor_critic.eval()
         while (
-            len(stats_episodes) < number_of_eval_episodes
-            and self.envs.num_envs > 0
+                len(stats_episodes) < number_of_eval_episodes
+                and self.envs.num_envs > 0
         ):
             current_episodes = self.envs.current_episodes()
 
             with torch.no_grad():
-                actions = self.actor_critic.act(batch, deterministic=True)
+                (
+                    actions,
+                    test_recurrent_hidden_states,
+                ) = self.actor_critic.act(
+                    batch,
+                    test_recurrent_hidden_states,
+                    None,
+                    not_done_masks,
+                    deterministic=True,
+                )
 
-                # type: ignore
+                # prev_actions.copy_(actions)  # type: ignore
             # NB: Move actions to CPU.  If CUDA tensors are
             # sent in to env.step(), that will create CUDA contexts
             # in the subprocesses.
             # For backwards compatibility, we also call .item() to convert to
             # an int
-            # if actions[0].shape[0] > 1:
-            #     step_data = [
-            #         action_array_to_dict(self.policy_action_space, a)
-            #         for a in actions.to(device="cpu")
-            #     ]
-            # else:
-            step_data = [a.item() for a in actions.to(device="cpu")]
+            if actions[0].shape[0] > 1:
+                step_data = [
+                    action_array_to_dict(self.policy_action_space, a)
+                    for a in actions.to(device="cpu")
+                ]
+            else:
+                step_data = [a.item() for a in actions.to(device="cpu")]
 
             outputs = self.envs.step(step_data)
 
@@ -891,8 +907,8 @@ class OffEnvDDTrainer(PPOTrainer):
             n_envs = self.envs.num_envs
             for i in range(n_envs):
                 if (
-                    next_episodes[i].scene_id,
-                    next_episodes[i].episode_id,
+                        next_episodes[i].scene_id,
+                        next_episodes[i].episode_id,
                 ) in stats_episodes:
                     envs_to_pause.append(i)
 
@@ -943,6 +959,7 @@ class OffEnvDDTrainer(PPOTrainer):
             not_done_masks = not_done_masks.to(device=self.device)
             (
                 self.envs,
+                test_recurrent_hidden_states,
                 not_done_masks,
                 current_episode_reward,
                 batch,
@@ -950,6 +967,7 @@ class OffEnvDDTrainer(PPOTrainer):
             ) = self._pause_envs(
                 envs_to_pause,
                 self.envs,
+                test_recurrent_hidden_states,
                 not_done_masks,
                 current_episode_reward,
                 batch,
@@ -960,8 +978,8 @@ class OffEnvDDTrainer(PPOTrainer):
         aggregated_stats = {}
         for stat_key in next(iter(stats_episodes.values())).keys():
             aggregated_stats[stat_key] = (
-                sum(v[stat_key] for v in stats_episodes.values())
-                / num_episodes
+                    sum(v[stat_key] for v in stats_episodes.values())
+                    / num_episodes
             )
 
         for k, v in aggregated_stats.items():
@@ -985,12 +1003,15 @@ class OffEnvDDTrainer(PPOTrainer):
     def _pause_envs(
             envs_to_pause: List[int],
             envs: VectorEnv,
+            test_recurrent_hidden_states: Tensor,
             not_done_masks: Tensor,
             current_episode_reward: Tensor,
             batch: Dict[str, Tensor],
             rgb_frames: Union[List[List[Any]], List[List[ndarray]]],
     ) -> Tuple[
         VectorEnv,
+        Tensor,
+        Tensor,
         Tensor,
         Tensor,
         Dict[str, Tensor],
@@ -1004,7 +1025,9 @@ class OffEnvDDTrainer(PPOTrainer):
                 envs.pause_at(idx)
 
             # indexing along the batch dimensions
-
+            test_recurrent_hidden_states = test_recurrent_hidden_states[
+                state_index
+            ]
             not_done_masks = not_done_masks[state_index]
             current_episode_reward = current_episode_reward[state_index]
 
@@ -1015,6 +1038,7 @@ class OffEnvDDTrainer(PPOTrainer):
 
         return (
             envs,
+            test_recurrent_hidden_states,
             not_done_masks,
             current_episode_reward,
             batch,

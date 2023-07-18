@@ -236,7 +236,7 @@ class IQLRNNPolicy(nn.Module, Policy):
 
         return (
             action,
-            action_log_probs,
+            # action_log_probs,
             rnn_hidden_states,
         )
 
