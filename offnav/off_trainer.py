@@ -481,12 +481,12 @@ class OffEnvDDTrainer(PPOTrainer):
 
         self.agent.train()
 
-        stats, rnn_hiden_states, actions = self.agent.update(self.rollouts, self.num_steps_done)
+        stats, rnn_hiden_states, action_distributions = self.agent.update(self.rollouts, self.num_steps_done)
 
         self.rollouts.after_update(rnn_hiden_states)
         self.pth_time += time.time() - t_update_model
 
-        return stats, actions
+        return stats, action_distributions
 
     @profiling_wrapper.RangeContext("train")
     def train(self) -> None:
@@ -616,7 +616,7 @@ class OffEnvDDTrainer(PPOTrainer):
                 if self._is_distributed:
                     self.num_rollouts_done_store.add("num_done", 1)
 
-                stats, actions = self._update_agent()
+                stats, action_distributions = self._update_agent()
 
                 if il_cfg.use_linear_lr_decay:
                     lr_scheduler.step()  # type: ignore
@@ -627,7 +627,7 @@ class OffEnvDDTrainer(PPOTrainer):
                     count_steps_delta,
                 )
 
-                self._training_log(writer, losses, prev_time, actions)
+                self._training_log(writer, losses, prev_time, action_distributions)
 
                 # checkpoint model
                 if rank0_only() and self.should_checkpoint():
@@ -646,7 +646,7 @@ class OffEnvDDTrainer(PPOTrainer):
 
     @rank0_only
     def _training_log(
-            self, writer, losses: Dict[str, float], prev_time: int = 0, dist=None
+            self, writer, losses: Dict[str, float], prev_time: int = 0, action_distributions=None
     ):
         deltas = {
             k: (
@@ -681,8 +681,9 @@ class OffEnvDDTrainer(PPOTrainer):
         writer.add_scalar("metrics/fps", fps, self.num_steps_done)
 
         # Add action distribution
-        if dist is not None:
-            writer.add_histogram(f"distributions/action_distribution", dist, self.num_steps_done)
+        if action_distributions is not None:
+            for k, dist in action_distributions.items():
+                writer.add_histogram(f"distributions/{k}", dist, self.num_steps_done)
 
         # log stats
         if self.num_updates_done % self.config.LOG_INTERVAL == 0:

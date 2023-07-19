@@ -162,7 +162,7 @@ _CONFIG.OFF.BehaviorCloning.use_linear_lr_decay = True
 _CONFIG.OFF.BehaviorCloning.reward_window_size = 50
 _CONFIG.OFF.BehaviorCloning.sync_frac = 0.6
 _CONFIG.OFF.BehaviorCloning.use_double_buffered_sampler = False
-_CONFIG.OFF.BehaviorCloning.hidden_size = 1024
+_CONFIG.OFF.BehaviorCloning.hidden_size = 2048
 
 ##############################################
 # Policy config
