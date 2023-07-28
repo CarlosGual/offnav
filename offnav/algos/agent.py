@@ -448,16 +448,16 @@ class IQLRNNAgent(nn.Module):
             weight_decay=q_weight_decay,
             eps=eps,
         )
-        # self.qf2_optimizer = optim.Adam(
-        #     list(
-        #         filter(
-        #             lambda p: p.requires_grad, actor_critic.qf2.parameters()
-        #         )
-        #     ),
-        #     lr=qf_lr,
-        #     weight_decay=q_weight_decay,
-        #     eps=eps,
-        # )
+        self.qf2_optimizer = optim.Adam(
+            list(
+                filter(
+                    lambda p: p.requires_grad, actor_critic.qf2.parameters()
+                )
+            ),
+            lr=qf_lr,
+            weight_decay=q_weight_decay,
+            eps=eps,
+        )
         self.vf_optimizer = optim.Adam(
             list(
                 filter(
@@ -478,19 +478,25 @@ class IQLRNNAgent(nn.Module):
         profiling_wrapper.range_push("OFF.update epoch")
         data_generator = rollouts.recurrent_generator(self.num_mini_batch)
         hidden_states_qf1 = []
+        hidden_states_qf2 = []
         hidden_states_tqf1 = []
+        hidden_states_tqf2 = []
         hidden_states_policy = []
         total_sampled_actions = []
         total_deterministic_actions = []
         total_dataset_actions = []
+        total_probs = []
         total_qf1_loss = 0.0
+        total_qf2_loss = 0.0
         total_policy_loss = 0.0
         total_q1_pred = 0.0
+        total_q2_pred = 0.0
         total_q_target = 0.0
         total_weights = 0.0
         total_adv = 0.0
         total_vf_pred = 0.0
         total_vf_loss = 0.0
+        total_entropy = 0.0
 
         for batch in data_generator:
             obs = batch["observations"]
@@ -498,30 +504,66 @@ class IQLRNNAgent(nn.Module):
             rewards = batch["rewards"]
             next_obs = batch["next_observations"]
             masks = batch["masks"]
-            terminals = torch.logical_not(batch["masks"]).float()
+            terminals = torch.logical_not(batch["masks"])
             rnn_hidden_states = batch["recurrent_hidden_states"]
+
+            # Get only the k-est steps before the terminal state
+            k = 5
+            terminal_indexes = torch.nonzero(terminals.squeeze()).squeeze()
+            if len(terminal_indexes) == 0:
+                continue
+            final_indexes = []
+            # Redo masks and terminals
+            masks = []
+            terminals = []
+            for index in terminal_indexes:
+                if index <= k:
+                    continue
+                for i in range(index-k, index):
+                    final_indexes.append(i)
+                    # If we are not at the end of the episode
+                    if i == index - k:
+                        masks.append(False)
+                        terminals.append(False)
+                    # When we finish the episode
+                    elif i == index - 1:
+                        masks.append(True)
+                        terminals.append(True)
+                    else:
+                        masks.append(True)
+                        terminals.append(False)
+            actions = actions[final_indexes]
+            rewards = rewards[final_indexes]
+            masks = torch.tensor(masks, dtype=torch.bool, device=self.device).unsqueeze(1)
+            terminals = torch.tensor(terminals, dtype=torch.bool, device=self.device)
+            obs = obs[final_indexes]
+            next_obs = next_obs[final_indexes]
 
             # Put all predictions together
             q1_pred, rnn_hidden_q1 = self.actor_critic.qf1(obs, rnn_hidden_states['qf1'], actions, masks)
-            # q2_pred, rnn_hidden_q2 = self.actor_critic.qf2(obs, rnn_hidden_states, actions, masks)
+            q2_pred, rnn_hidden_q2 = self.actor_critic.qf2(obs, rnn_hidden_states['qf2'], actions, masks)
             target_vf_pred = self.actor_critic.vf(next_obs, actions).detach()
             tq1_pred, rnn_hidden_tq1 = self.actor_critic.target_qf1(obs, rnn_hidden_states['tqf1'], actions, masks)
-            # tq2_pred, rnn_hidden_tq2 = self.actor_critic.target_qf2(obs, rnn_hidden_states, actions, masks)
-            q_pred = tq1_pred.detach()
+            tq2_pred, rnn_hidden_tq2 = self.actor_critic.target_qf2(obs, rnn_hidden_states['tqf2'], actions, masks)
+
             vf_pred = self.actor_critic.vf(obs, actions)
             dist, rnn_hidden_policy, entropy = self.actor_critic(obs, rnn_hidden_states['policy'], actions, masks)
 
             """
             QF Loss
             """
-            q_target = rewards + (1. - terminals) * self.discount * target_vf_pred
+            q_target = rewards + (1. - terminals.float()) * self.discount * target_vf_pred
             q_target = q_target.detach()
             qf1_loss = self.qf_criterion(q1_pred, q_target)
-            # qf2_loss = self.qf_criterion(q2_pred, q_target)
+            qf2_loss = self.qf_criterion(q2_pred, q_target)
 
             """
             VF Loss
             """
+            q_pred = torch.min(
+                tq1_pred,
+                tq2_pred
+            ).detach()
             vf_err = vf_pred - q_pred
             vf_sign = (vf_err > 0).float()
             vf_weight = (1 - vf_sign) * self.quantile + vf_sign * (1 - self.quantile)
@@ -530,10 +572,13 @@ class IQLRNNAgent(nn.Module):
             """
             Policy Loss
             """
-            policy_logpp = dist.log_prob(actions)
+            # Save sampled actions, deterministic actions, dataset actions, and probs
             sampled_actions = dist.sample().detach().cpu().numpy()
             deterministic_actions = dist.mode().detach().cpu().numpy()
             dataset_actions = actions.detach().cpu().numpy()
+            probs = dist.probs.detach().cpu().numpy()
+
+            policy_logpp = dist.log_prob(actions.squeeze())
             adv = q_pred - vf_pred
             exp_adv = torch.exp(adv / self.beta)
             if self.clip_score is not None:
@@ -550,9 +595,9 @@ class IQLRNNAgent(nn.Module):
                 qf1_loss.backward()
                 self.qf1_optimizer.step()
 
-                # self.qf2_optimizer.zero_grad()
-                # qf2_loss.backward()
-                # self.qf2_optimizer.step()
+                self.qf2_optimizer.zero_grad()
+                qf2_loss.backward()
+                self.qf2_optimizer.step()
 
                 self.vf_optimizer.zero_grad()
                 vf_loss.backward()
@@ -570,64 +615,79 @@ class IQLRNNAgent(nn.Module):
                 soft_update_from_to(
                     self.actor_critic.qf1, self.actor_critic.target_qf1, self.soft_target_tau
                 )
-                # soft_update_from_to(
-                #     self.actor_critic.qf2, self.actor_critic.target_qf2, self.soft_target_tau
-                # )
+                soft_update_from_to(
+                    self.actor_critic.qf2, self.actor_critic.target_qf2, self.soft_target_tau
+                )
 
             hidden_states_qf1.append(rnn_hidden_q1)
+            hidden_states_qf2.append(rnn_hidden_q2)
             hidden_states_tqf1.append(rnn_hidden_tq1)
+            hidden_states_tqf2.append(rnn_hidden_tq2)
             hidden_states_policy.append(rnn_hidden_policy)
             total_sampled_actions.append(sampled_actions.squeeze(1))
             total_deterministic_actions.append(deterministic_actions.squeeze(1))
             total_dataset_actions.append(dataset_actions.squeeze(1))
+            total_probs.append(probs.flatten())
             total_qf1_loss += qf1_loss.item()
+            total_qf2_loss += qf2_loss.item()
             total_policy_loss += policy_loss.item()
             total_q1_pred += q1_pred.mean().item()
+            total_q2_pred += q2_pred.mean().item()
             total_q_target += q_target.mean().item()
             total_weights += weights.mean().item()
             total_adv += adv.mean().item()
             total_vf_pred += vf_pred.mean().item()
             total_vf_loss += vf_loss.mean().item()
+            total_entropy += entropy.item()
 
         profiling_wrapper.range_pop()
 
         hidden_states_qf1 = torch.cat(hidden_states_qf1, dim=0).detach()
+        hidden_states_qf2 = torch.cat(hidden_states_qf2, dim=0).detach()
         hidden_states_tqf1 = torch.cat(hidden_states_tqf1, dim=0).detach()
+        hidden_states_tqf2 = torch.cat(hidden_states_tqf2, dim=0).detach()
         hidden_states_policy = torch.cat(hidden_states_policy, dim=0).detach()
         total_qf1_loss /= self.num_mini_batch
+        total_qf2_loss /= self.num_mini_batch
         total_policy_loss /= self.num_mini_batch
         total_q1_pred /= self.num_mini_batch
+        total_q2_pred /= self.num_mini_batch
         total_q_target /= self.num_mini_batch
         total_weights /= self.num_mini_batch
         total_adv /= self.num_mini_batch
         total_vf_pred /= self.num_mini_batch
         total_vf_loss /= self.num_mini_batch
+        total_entropy /= self.num_mini_batch
 
         # Save hidden state dict
         hidden_states = dict(
             qf1=hidden_states_qf1,
+            qf2=hidden_states_qf2,
             tqf1=hidden_states_tqf1,
+            tqf2=hidden_states_tqf2,
             policy=hidden_states_policy,
         )
 
         # Save for statistics
         stats = dict(
             qf1_loss=total_qf1_loss,
-            # qf2_loss=np.mean(self.get_numpy(qf2_loss)),
+            qf2_loss=total_qf2_loss,
             policy_loss=total_policy_loss,
             q1_pred=total_q1_pred,
-            # q2_pred=np.mean(self.get_numpy(q2_pred)),
+            q2_pred=total_q2_pred,
             q_target=total_q_target,
             weights=total_weights,
             adv=total_adv,
             vf_pred=total_vf_pred,
             vf_loss=total_vf_loss,
+            entropy=total_entropy,
         )
 
         action_distributions = dict(
-            sampled_actions=np.array(total_sampled_actions),
-            deterministic_actions=np.array(total_deterministic_actions),
-            dataset_actions=np.array(total_dataset_actions),
+            sampled_actions=np.concatenate(total_sampled_actions, axis=0),
+            deterministic_actions=np.concatenate(total_deterministic_actions, axis=0),
+            dataset_actions=np.concatenate(total_dataset_actions, axis=0),
+            probs=np.concatenate(total_probs, axis=0),
         )
 
         return stats, hidden_states, action_distributions
