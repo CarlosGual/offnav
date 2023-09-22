@@ -481,7 +481,7 @@ class OffEnvDDTrainer(PPOTrainer):
 
         self.agent.train()
 
-        stats, rnn_hiden_states, action_distributions = self.agent.update(self.rollouts, self.num_steps_done)
+        stats, rnn_hiden_states, action_distributions = self.agent.update(self.rollouts, self.num_steps_done, self.num_updates_done)
 
         self.rollouts.after_update(rnn_hiden_states)
         self.pth_time += time.time() - t_update_model

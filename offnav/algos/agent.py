@@ -474,7 +474,7 @@ class IQLRNNAgent(nn.Module):
     def forward(self, *x):
         raise NotImplementedError
 
-    def update(self, rollouts, num_steps_done) -> Tuple[float, Any, float, float]:
+    def update(self, rollouts, num_steps_done, num_updates_done) -> Tuple[float, Any, float, float]:
         profiling_wrapper.range_push("OFF.update epoch")
         data_generator = rollouts.recurrent_generator(self.num_mini_batch)
         hidden_states_qf1 = []
@@ -497,19 +497,23 @@ class IQLRNNAgent(nn.Module):
         total_vf_pred = 0.0
         total_vf_loss = 0.0
         total_entropy = 0.0
+        num_steps_episode = 500
+        num_total_updates = 20000
 
         for batch in data_generator:
             obs = batch["observations"]
             actions = batch["actions"]
             rewards = batch["rewards"]
             next_obs = batch["next_observations"]
-            masks = batch["masks"]
+            # masks = batch["masks"]
             terminals = torch.logical_not(batch["masks"])
             rnn_hidden_states = batch["recurrent_hidden_states"]
 
             # Get only the k-est steps before the terminal state
-            k = 5
+            k = np.maximum(int(np.ceil(num_updates_done * (num_steps_episode/num_total_updates))), 5)
             terminal_indexes = torch.nonzero(terminals.squeeze()).squeeze()
+            if terminal_indexes.dim() == 0:
+                continue
             if len(terminal_indexes) == 0:
                 continue
             final_indexes = []
@@ -535,7 +539,7 @@ class IQLRNNAgent(nn.Module):
             actions = actions[final_indexes]
             rewards = rewards[final_indexes]
             masks = torch.tensor(masks, dtype=torch.bool, device=self.device).unsqueeze(1)
-            terminals = torch.tensor(terminals, dtype=torch.bool, device=self.device)
+            terminals = torch.tensor(terminals, dtype=torch.bool, device=self.device).unsqueeze(1)
             obs = obs[final_indexes]
             next_obs = next_obs[final_indexes]
 

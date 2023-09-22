@@ -69,7 +69,5 @@ ENV GLOG_minloglevel=2
 ENV MAGNUM_LOG="quiet"
 ENV HABITAT_SIM_LOG=quiet
 
-
-
 COPY entrypoint.sh /home/carlos
 ENTRYPOINT [ "/home/carlos/entrypoint.sh" ]
