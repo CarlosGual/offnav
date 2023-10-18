@@ -136,7 +136,7 @@ _CONFIG.IL.BehaviorCloning.use_linear_lr_decay = True
 _CONFIG.IL.BehaviorCloning.reward_window_size = 50
 _CONFIG.IL.BehaviorCloning.sync_frac = 0.6
 _CONFIG.IL.BehaviorCloning.use_double_buffered_sampler = False
-_CONFIG.IL.BehaviorCloning.hidden_size = 2048
+_CONFIG.IL.BehaviorCloning.hidden_size = 1024
 
 ##############################################
 # OFF config
@@ -162,7 +162,7 @@ _CONFIG.OFF.BehaviorCloning.use_linear_lr_decay = True
 _CONFIG.OFF.BehaviorCloning.reward_window_size = 50
 _CONFIG.OFF.BehaviorCloning.sync_frac = 0.6
 _CONFIG.OFF.BehaviorCloning.use_double_buffered_sampler = False
-_CONFIG.OFF.BehaviorCloning.hidden_size = 2048
+_CONFIG.OFF.BehaviorCloning.hidden_size = 1024
 
 ##############################################
 # Policy config
@@ -189,7 +189,7 @@ _CONFIG.POLICY.RGB_ENCODER.drop_path_rate = 0.0
 _CONFIG.POLICY.RGB_ENCODER.normalize_visual_inputs = False
 
 _CONFIG.POLICY.STATE_ENCODER = CN()
-_CONFIG.POLICY.STATE_ENCODER.hidden_size = 2048
+_CONFIG.POLICY.STATE_ENCODER.hidden_size = 1024
 _CONFIG.POLICY.STATE_ENCODER.rnn_type = "GRU"
 _CONFIG.POLICY.STATE_ENCODER.num_recurrent_layers = 2
 
@@ -213,7 +213,7 @@ _CONFIG.POLICY.CRITIC.hidden_dim = 512
 _CONFIG.RL.POLICY.name = "ObjectNavILMAEPolicy"
 _CONFIG.RL.PPO.num_mini_batch = 2
 _CONFIG.RL.PPO.use_linear_lr_decay = True
-_CONFIG.RL.PPO.hidden_size = 2048
+_CONFIG.RL.PPO.hidden_size = 1024
 
 ##############################################
 # Policy Finetuning config
