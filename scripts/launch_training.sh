@@ -1,5 +1,5 @@
 #!/bin/bash
-export NUM_GPUS=1
+export NUM_GPUS=2
 export GLOG_minloglevel=2
 export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
