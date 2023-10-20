@@ -42,6 +42,8 @@ class RolloutStorage:
                 )
             )
 
+        print('+++++++++++++++++++', num_envs)
+
         self.recurrent_hidden_states = TensorDict(
             qf1=torch.zeros(1, num_envs, num_recurrent_layers, recurrent_hidden_state_size),
             qf2=torch.zeros(1, num_envs, num_recurrent_layers, recurrent_hidden_state_size),
