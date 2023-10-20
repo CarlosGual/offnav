@@ -79,7 +79,7 @@ class OffEnvDDTrainer(PPOTrainer):
         )
         self.obs_space = observation_space
 
-        policy = baseline_registry.get_policy(self.config.IL.POLICY.name)
+        policy = baseline_registry.get_policy(self.config.OFF.POLICY.name)
         self.actor_critic = policy.from_config(
             self.config, observation_space, self.envs.action_spaces[0]
         )

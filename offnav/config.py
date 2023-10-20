@@ -144,7 +144,7 @@ _CONFIG.IL.BehaviorCloning.hidden_size = 1024
 
 _CONFIG.OFF = CN()
 _CONFIG.OFF.POLICY = CN()
-_CONFIG.OFF.POLICY.name = "ObjectNavIQLPolicy"
+_CONFIG.OFF.POLICY.name = "ObjectNavIQLRNNPolicy"
 _CONFIG.OFF.POLICY.USE_IW = True
 _CONFIG.OFF.POLICY.distrib_backend = "NCCL"
 _CONFIG.OFF.BehaviorCloning = CN()
