@@ -42,7 +42,7 @@ class RolloutStorage:
                 )
             )
 
-        print('+++++++++++++++++++', num_envs)
+        print('en inicializacion rollout:', 1, num_envs, num_recurrent_layers, recurrent_hidden_state_size)
 
         self.recurrent_hidden_states = TensorDict(
             qf1=torch.zeros(1, num_envs, num_recurrent_layers, recurrent_hidden_state_size),
