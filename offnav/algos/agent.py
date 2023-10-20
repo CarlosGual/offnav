@@ -544,6 +544,7 @@ class IQLRNNAgent(nn.Module):
             next_obs = next_obs[final_indexes]
 
             # Put all predictions together
+            print('en agente', rnn_hidden_states['qf1'].shape)
             q1_pred, rnn_hidden_q1 = self.actor_critic.qf1(obs, rnn_hidden_states['qf1'], actions, masks)
             q2_pred, rnn_hidden_q2 = self.actor_critic.qf2(obs, rnn_hidden_states['qf2'], actions, masks)
             target_vf_pred = self.actor_critic.vf(next_obs, actions).detach()
