@@ -201,6 +201,8 @@ class OffEnvDDTrainer(PPOTrainer):
 
         self._nbuffers = 2 if il_cfg.use_double_buffered_sampler else 1
 
+        print('******************JSDJFAJDSFJ', self.actor_critic.net.num_recurrent_layers)
+
         self.rollouts = RolloutStorage(
             il_cfg.num_steps,
             self.envs.num_envs,
