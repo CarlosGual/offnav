@@ -39,9 +39,9 @@ def main():
     )
 
     args = parser.parse_args()
-    with profiler.profile(record_shapes=True, use_cuda=True) as prof:
-        run_exp(**vars(args))
-    print(prof.key_averages().table(sort_by="cuda_time_total"))
+    # with profiler.profile(record_shapes=True, use_cuda=True) as prof:
+    run_exp(**vars(args))
+    # print(prof.key_averages().table(sort_by="cuda_time_total"))
 
 
 def execute_exp(config: Config, run_type: str) -> None:

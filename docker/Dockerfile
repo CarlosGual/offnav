@@ -62,7 +62,7 @@ RUN /bin/bash -c ". activate habitat; pip install gym==0.22.0 urllib3==1.25.11"
 
 # Install specific habitat-lab
 # RUN git clone --depth 1 --branch v0.2.2 https://github.com/facebookresearch/habitat-lab.git
-RUN echo "Installing habitat-labi"
+RUN echo "Installing habitat-labotto"
 RUN git clone https://github.com/CarlosGual/habitat-lab.git
 RUN /bin/bash -c ". activate habitat; cd habitat-lab; python setup.py develop --all"
 

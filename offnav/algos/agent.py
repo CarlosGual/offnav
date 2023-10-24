@@ -498,7 +498,7 @@ class IQLRNNAgent(nn.Module):
         total_vf_loss = 0.0
         total_entropy = 0.0
         num_steps_episode = 500
-        num_total_updates = 20000
+        num_total_updates = 50000
 
         for batch in data_generator:
             # obs = batch["observations"]
@@ -510,8 +510,7 @@ class IQLRNNAgent(nn.Module):
             rnn_hidden_states = batch["recurrent_hidden_states"]
 
             # Get only the k-est steps before the terminal state
-            # k = np.maximum(int(np.ceil(num_updates_done * (num_steps_episode/num_total_updates))), 5)
-            k = 15
+            k = np.maximum(int(np.ceil(num_updates_done * (num_steps_episode/num_total_updates))), 5)
             terminal_indexes = torch.nonzero(terminals.squeeze()).squeeze()
             if terminal_indexes.dim() == 0:
                 continue

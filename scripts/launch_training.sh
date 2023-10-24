@@ -1,12 +1,12 @@
 #!/bin/bash
-export NUM_GPUS=1
+export NUM_GPUS=4
 export GLOG_minloglevel=2
 export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
 
 config="configs/experiments/off_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_minimal"
-TENSORBOARD_DIR="tb/rnn/curricula_learning"
+TENSORBOARD_DIR="tb/rnn/curricula_learning_no_double"
 CHECKPOINT_DIR="data/new_checkpoints"
 
 
@@ -20,6 +20,6 @@ python -u -m torch.distributed.launch \
     TENSORBOARD_DIR $TENSORBOARD_DIR \
     CHECKPOINT_FOLDER $CHECKPOINT_DIR \
     NUM_UPDATES 50000 \
-    NUM_ENVIRONMENTS 6 \
+    NUM_ENVIRONMENTS 12 \
     RL.DDPPO.force_distributed True \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz" \
