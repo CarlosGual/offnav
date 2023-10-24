@@ -38,3 +38,4 @@ POLICY:
     no_critic: True
   STATE_ENCODER:
     hidden_size: 512
+    num_recurrent_layers: 2
