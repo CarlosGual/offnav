@@ -15,7 +15,7 @@ from habitat.config import Config
 from habitat_baselines.common.baseline_registry import baseline_registry
 
 from offnav.config import get_config
-
+from torch.autograd import profiler
 
 def main():
     parser = argparse.ArgumentParser()
@@ -39,7 +39,9 @@ def main():
     )
 
     args = parser.parse_args()
-    run_exp(**vars(args))
+    with profiler.profile(record_shapes=True, use_cuda=True) as prof:
+        run_exp(**vars(args))
+    print(prof.key_averages().table(sort_by="cuda_time_total"))
 
 
 def execute_exp(config: Config, run_type: str) -> None:

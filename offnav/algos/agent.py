@@ -501,55 +501,55 @@ class IQLRNNAgent(nn.Module):
         num_total_updates = 20000
 
         for batch in data_generator:
-            obs = batch["observations"]
-            actions = batch["actions"]
-            rewards = batch["rewards"]
-            next_obs = batch["next_observations"]
-            masks = batch["masks"]
+            # obs = batch["observations"]
+            # actions = batch["actions"]
+            # rewards = batch["rewards"]
+            # next_obs = batch["next_observations"]
+            # masks = batch["masks"]
             terminals = torch.logical_not(batch["masks"])
             rnn_hidden_states = batch["recurrent_hidden_states"]
 
-            # # Get only the k-est steps before the terminal state
+            # Get only the k-est steps before the terminal state
             # k = np.maximum(int(np.ceil(num_updates_done * (num_steps_episode/num_total_updates))), 5)
-            # terminal_indexes = torch.nonzero(terminals.squeeze()).squeeze()
-            # if terminal_indexes.dim() == 0:
-            #     continue
-            # if len(terminal_indexes) == 0:
-            #     continue
-            # final_indexes = []
-            # # Redo masks and terminals
-            # masks = []
-            # terminals = []
-            # for index in terminal_indexes:
-            #     if index <= k:
-            #         continue
-            #     for i in range(index-k, index):
-            #         final_indexes.append(i)
-            #         # If we are not at the end of the episode
-            #         if i == index - k:
-            #             masks.append(False)
-            #             terminals.append(False)
-            #         # When we finish the episode
-            #         elif i == index - 1:
-            #             masks.append(True)
-            #             terminals.append(True)
-            #         else:
-            #             masks.append(True)
-            #             terminals.append(False)
-            # actions = actions[final_indexes]
-            # rewards = rewards[final_indexes]
-            # masks = torch.tensor(masks, dtype=torch.bool, device=self.device).unsqueeze(1)
-            # terminals = torch.tensor(terminals, dtype=torch.bool, device=self.device).unsqueeze(1)
-            # obs = obs[final_indexes]
-            # next_obs = next_obs[final_indexes]
+            k = 15
+            terminal_indexes = torch.nonzero(terminals.squeeze()).squeeze()
+            if terminal_indexes.dim() == 0:
+                continue
+            if len(terminal_indexes) == 0:
+                continue
+            final_indexes = []
+            # Redo masks and terminals
+            masks = []
+            terminals = []
+            for index in terminal_indexes:
+                if index <= k:
+                    continue
+                for i in range(index-k, index):
+                    final_indexes.append(i)
+                    # If we are not at the end of the episode
+                    if i == index - k:
+                        masks.append(False)
+                        terminals.append(False)
+                    # When we finish the episode
+                    elif i == index - 1:
+                        masks.append(True)
+                        terminals.append(True)
+                    else:
+                        masks.append(True)
+                        terminals.append(False)
+            actions = batch["actions"][final_indexes]
+            rewards = batch["rewards"][final_indexes]
+            masks = torch.tensor(masks, dtype=torch.bool, device=self.device).unsqueeze(1)
+            terminals = torch.tensor(terminals, dtype=torch.bool, device=self.device).unsqueeze(1)
+            obs = batch["observations"][final_indexes]
+            next_obs = batch["next_observations"][final_indexes]
 
             # Put all predictions together
-            print('en agente', rnn_hidden_states['qf1'].shape)
             q1_pred, rnn_hidden_q1 = self.actor_critic.qf1(obs, rnn_hidden_states['qf1'], actions, masks)
-            q2_pred, rnn_hidden_q2 = self.actor_critic.qf2(obs, rnn_hidden_states['qf2'], actions, masks)
+            # q2_pred, rnn_hidden_q2 = self.actor_critic.qf2(obs, rnn_hidden_states['qf2'], actions, masks)
             target_vf_pred = self.actor_critic.vf(next_obs, actions).detach()
             tq1_pred, rnn_hidden_tq1 = self.actor_critic.target_qf1(obs, rnn_hidden_states['tqf1'], actions, masks)
-            tq2_pred, rnn_hidden_tq2 = self.actor_critic.target_qf2(obs, rnn_hidden_states['tqf2'], actions, masks)
+            # tq2_pred, rnn_hidden_tq2 = self.actor_critic.target_qf2(obs, rnn_hidden_states['tqf2'], actions, masks)
 
             vf_pred = self.actor_critic.vf(obs, actions)
             dist, rnn_hidden_policy, entropy = self.actor_critic(obs, rnn_hidden_states['policy'], actions, masks)
@@ -560,16 +560,16 @@ class IQLRNNAgent(nn.Module):
             q_target = rewards + (1. - terminals.float()) * self.discount * target_vf_pred
             q_target = q_target.detach()
             qf1_loss = self.qf_criterion(q1_pred, q_target)
-            qf2_loss = self.qf_criterion(q2_pred, q_target)
+            # qf2_loss = self.qf_criterion(q2_pred, q_target)
 
             """
             VF Loss
             """
-            q_pred = torch.min(
-                tq1_pred,
-                tq2_pred
-            ).detach()
-            vf_err = vf_pred - q_pred
+            # q_pred = torch.min(
+            #     tq1_pred,
+            #     tq2_pred
+            # ).detach()
+            vf_err = vf_pred - tq1_pred  # q_pred
             vf_sign = (vf_err > 0).float()
             vf_weight = (1 - vf_sign) * self.quantile + vf_sign * (1 - self.quantile)
             vf_loss = (vf_weight * (vf_err ** 2)).mean()
@@ -584,7 +584,7 @@ class IQLRNNAgent(nn.Module):
             probs = dist.probs.detach().cpu().numpy()
 
             policy_logpp = dist.log_prob(actions.squeeze())
-            adv = q_pred - vf_pred
+            adv = tq1_pred - vf_pred
             exp_adv = torch.exp(adv / self.beta)
             if self.clip_score is not None:
                 exp_adv = torch.clamp(exp_adv, max=self.clip_score)
@@ -600,9 +600,9 @@ class IQLRNNAgent(nn.Module):
                 qf1_loss.backward()
                 self.qf1_optimizer.step()
 
-                self.qf2_optimizer.zero_grad()
-                qf2_loss.backward()
-                self.qf2_optimizer.step()
+                # self.qf2_optimizer.zero_grad()
+                # qf2_loss.backward()
+                # self.qf2_optimizer.step()
 
                 self.vf_optimizer.zero_grad()
                 vf_loss.backward()
@@ -620,24 +620,24 @@ class IQLRNNAgent(nn.Module):
                 soft_update_from_to(
                     self.actor_critic.qf1, self.actor_critic.target_qf1, self.soft_target_tau
                 )
-                soft_update_from_to(
-                    self.actor_critic.qf2, self.actor_critic.target_qf2, self.soft_target_tau
-                )
+                # soft_update_from_to(
+                #     self.actor_critic.qf2, self.actor_critic.target_qf2, self.soft_target_tau
+                # )
 
             hidden_states_qf1.append(rnn_hidden_q1)
-            hidden_states_qf2.append(rnn_hidden_q2)
+            # hidden_states_qf2.append(rnn_hidden_q2)
             hidden_states_tqf1.append(rnn_hidden_tq1)
-            hidden_states_tqf2.append(rnn_hidden_tq2)
+            # hidden_states_tqf2.append(rnn_hidden_tq2)
             hidden_states_policy.append(rnn_hidden_policy)
             total_sampled_actions.append(sampled_actions.squeeze(1))
             total_deterministic_actions.append(deterministic_actions.squeeze(1))
             total_dataset_actions.append(dataset_actions.squeeze(1))
             total_probs.append(probs.flatten())
             total_qf1_loss += qf1_loss.item()
-            total_qf2_loss += qf2_loss.item()
+            # total_qf2_loss += qf2_loss.item()
             total_policy_loss += policy_loss.item()
             total_q1_pred += q1_pred.mean().item()
-            total_q2_pred += q2_pred.mean().item()
+            # total_q2_pred += q2_pred.mean().item()
             total_q_target += q_target.mean().item()
             total_weights += weights.mean().item()
             total_adv += adv.mean().item()
@@ -648,9 +648,9 @@ class IQLRNNAgent(nn.Module):
         profiling_wrapper.range_pop()
 
         hidden_states_qf1 = torch.cat(hidden_states_qf1, dim=0).detach()
-        hidden_states_qf2 = torch.cat(hidden_states_qf2, dim=0).detach()
+        # hidden_states_qf2 = torch.cat(hidden_states_qf2, dim=0).detach()
         hidden_states_tqf1 = torch.cat(hidden_states_tqf1, dim=0).detach()
-        hidden_states_tqf2 = torch.cat(hidden_states_tqf2, dim=0).detach()
+        # hidden_states_tqf2 = torch.cat(hidden_states_tqf2, dim=0).detach()
         hidden_states_policy = torch.cat(hidden_states_policy, dim=0).detach()
         total_qf1_loss /= self.num_mini_batch
         total_qf2_loss /= self.num_mini_batch

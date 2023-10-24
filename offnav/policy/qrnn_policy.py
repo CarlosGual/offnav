@@ -274,7 +274,6 @@ class ObjectNavQRNNNet(ObjectNavPolicyRNNNet):
         depth_embedding: [batch_size x DEPTH_ENCODER.output_size]
         rgb_embedding: [batch_size x RGB_ENCODER.output_size]
         """
-        print('+++++++++++++++++++', rnn_hidden_states.size())
         features, rnn_hidden_states = super().forward(observations, rnn_hidden_states, actions, masks)
         value = self.critic(features)
         return value, rnn_hidden_states
