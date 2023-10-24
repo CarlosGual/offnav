@@ -12,7 +12,7 @@ NUM_ENVIRONMENTS: 2
 CHECKPOINT_FOLDER: "data/new_checkpoints/"
 TRAINER_NAME: "offnav"
 SENSORS: ["RGB_SENSOR"]
-NUM_UPDATES: 100
+NUM_UPDATES: 10
 LOG_INTERVAL: 10
 NUM_CHECKPOINTS: 100
 # Force PyTorch to be single threaded as
