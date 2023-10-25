@@ -17,6 +17,7 @@ from habitat_baselines.common.baseline_registry import baseline_registry
 from offnav.config import get_config
 from torch.autograd import profiler
 
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -39,9 +40,7 @@ def main():
     )
 
     args = parser.parse_args()
-    # with profiler.profile(record_shapes=True, use_cuda=True) as prof:
     run_exp(**vars(args))
-    # print(prof.key_averages().table(sort_by="cuda_time_total"))
 
 
 def execute_exp(config: Config, run_type: str) -> None:
@@ -52,9 +51,9 @@ def execute_exp(config: Config, run_type: str) -> None:
     """
     # set a random seed (from detectron2)
     seed = (
-        os.getpid()
-        + int(datetime.now().strftime("%S%f"))
-        + int.from_bytes(os.urandom(2), "big")
+            os.getpid()
+            + int(datetime.now().strftime("%S%f"))
+            + int.from_bytes(os.urandom(2), "big")
     )
     logger.info("Using a generated random seed {}".format(seed))
     config.defrost()
