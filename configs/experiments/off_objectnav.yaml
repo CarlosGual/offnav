@@ -25,6 +25,8 @@ EVAL:
 IL:
   POLICY:
     name: "ObjectNavIQLRNNPolicy"
+  BeheaviorCloning:
+    num_mini_batch: 2
 
 RL:
   SUCCESS_REWARD: 2.5
