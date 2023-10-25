@@ -500,8 +500,6 @@ class IQLRNNAgent(nn.Module):
         num_steps_episode = 500
         num_total_updates = 50000
 
-        print('shape qf1 previo data_generator: ', rollouts.recurrent_hidden_states['qf1'].shape)
-
         for batch in data_generator:
             # obs = batch["observations"]
             # actions = batch["actions"]
@@ -510,8 +508,6 @@ class IQLRNNAgent(nn.Module):
             # masks = batch["masks"]
             terminals = torch.logical_not(batch["masks"])
             rnn_hidden_states = batch["recurrent_hidden_states"]
-
-            print('shape qf1 after data_generator: ', rnn_hidden_states['qf1'].shape)
 
             # Get only the k-est steps before the terminal state
             k = np.maximum(int(np.ceil(num_updates_done * (num_steps_episode/num_total_updates))), 5)
