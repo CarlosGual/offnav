@@ -8,11 +8,11 @@ TENSORBOARD_DIR: "tb/curricula3"
 VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
 EVAL_CKPT_PATH_DIR: "data/new_checkpoints"
-NUM_ENVIRONMENTS: 6
+NUM_ENVIRONMENTS: 2
 CHECKPOINT_FOLDER: "data/new_checkpoints/"
 TRAINER_NAME: "offnav"
 SENSORS: ["RGB_SENSOR"]
-NUM_UPDATES: 1
+NUM_UPDATES: 100
 LOG_INTERVAL: 10
 NUM_CHECKPOINTS: 100
 # Force PyTorch to be single threaded as
@@ -26,7 +26,7 @@ IL:
   POLICY:
     name: "ObjectNavIQLRNNPolicy"
   BehaviorCloning:
-    num_mini_batch: 6
+    num_mini_batch: 2
 
 RL:
   SUCCESS_REWARD: 2.5

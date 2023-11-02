@@ -314,16 +314,16 @@ class ObjectNavIQLRNNPolicy(IQLRNNPolicy):
             rnn_type=rnn_type,
             num_recurrent_layers=num_recurrent_layers,
         )
-        self.qf2 = ObjectNavQRNNNet(
-            observation_space=observation_space,
-            policy_config=policy_config,
-            num_actions=action_space.n,
-            run_type=run_type,
-            use_actions=True,
-            hidden_size=hidden_size,
-            rnn_type=rnn_type,
-            num_recurrent_layers=num_recurrent_layers,
-        )
+        # self.qf2 = ObjectNavQRNNNet(
+        #     observation_space=observation_space,
+        #     policy_config=policy_config,
+        #     num_actions=action_space.n,
+        #     run_type=run_type,
+        #     use_actions=True,
+        #     hidden_size=hidden_size,
+        #     rnn_type=rnn_type,
+        #     num_recurrent_layers=num_recurrent_layers,
+        # )
         self.target_qf1 = ObjectNavQRNNNet(
             observation_space=observation_space,
             policy_config=policy_config,
@@ -334,16 +334,16 @@ class ObjectNavIQLRNNPolicy(IQLRNNPolicy):
             rnn_type=rnn_type,
             num_recurrent_layers=num_recurrent_layers,
         )
-        self.target_qf2 = ObjectNavQRNNNet(
-            observation_space=observation_space,
-            policy_config=policy_config,
-            num_actions=action_space.n,
-            run_type=run_type,
-            use_actions=True,
-            hidden_size=hidden_size,
-            rnn_type=rnn_type,
-            num_recurrent_layers=num_recurrent_layers,
-        )
+        # self.target_qf2 = ObjectNavQRNNNet(
+        #     observation_space=observation_space,
+        #     policy_config=policy_config,
+        #     num_actions=action_space.n,
+        #     run_type=run_type,
+        #     use_actions=True,
+        #     hidden_size=hidden_size,
+        #     rnn_type=rnn_type,
+        #     num_recurrent_layers=num_recurrent_layers,
+        # )
         self.vf = ObjectNavQNet(
             observation_space=observation_space,
             policy_config=policy_config,
