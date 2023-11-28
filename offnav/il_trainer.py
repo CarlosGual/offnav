@@ -469,8 +469,6 @@ class ILEnvDDPTrainer(PPOTrainer):
 
             self.envs.close()
 
-        self.data_writer.write_dataset('habitat_small.hdf5')
-
     @rank0_only
     def _training_log(
         self, writer, losses: Dict[str, float], prev_time: int = 0

@@ -91,6 +91,7 @@ class RolloutStorage:
 
         self.numsteps = numsteps
         self.current_rollout_step_idxs = [0 for _ in range(self._nbuffers)]
+        self.env_step_idxs = [0 for _ in range(num_envs)]
 
     @property
     def current_rollout_step_idx(self) -> int:
@@ -99,6 +100,10 @@ class RolloutStorage:
             for s in self.current_rollout_step_idxs
         )
         return self.current_rollout_step_idxs[0]
+
+    @property
+    def env_full_idxs(self) -> list:
+        return [True if env_idx >= self.numsteps else False for env_idx in self.env_step_idxs]
 
     def to(self, device):
         self.buffers.map_in_place(lambda v: v.to(device))
@@ -151,16 +156,84 @@ class RolloutStorage:
     def advance_rollout(self, buffer_index: int = 0):
         self.current_rollout_step_idxs[buffer_index] += 1
 
-    def after_update(self, rnn_hidden_states: Dict):
-        for k in self.recurrent_hidden_states:
-            self.recurrent_hidden_states[k][0:1] = rnn_hidden_states[k]
-        # self.recurrent_hidden_states[0:1] = rnn_hidden_states
+    def after_update(self, rnn_hidden_states: Dict = None):
+        if rnn_hidden_states is not None:
+            for k in self.recurrent_hidden_states:
+                self.recurrent_hidden_states[k][0:1] = rnn_hidden_states[k]
+            # self.recurrent_hidden_states[0:1] = rnn_hidden_states
 
         self.buffers[0] = self.buffers[self.current_rollout_step_idx]
 
         self.current_rollout_step_idxs = [
             0 for _ in self.current_rollout_step_idxs
         ]
+
+    def after_update_curricula(self, rnn_hidden_states: Dict = None):
+        if rnn_hidden_states is not None:
+            for k in self.recurrent_hidden_states:
+                self.recurrent_hidden_states[k][0:1] = rnn_hidden_states[k]
+            # self.recurrent_hidden_states[0:1] = rnn_hidden_states
+
+        self.buffers[0] = self.buffers[-1]
+
+        self.env_step_idxs = [
+            0 for _ in self.env_step_idxs
+        ]
+
+    def check_and_restore_rollout_full(self):
+        if self.current_rollout_step_idx >= self.numsteps - 1:
+            self.after_update()
+
+    def check_done(self):
+        # move to cpu to free GPU memory
+        masks = self.buffers['masks'][self.current_rollout_step_idx].squeeze().cpu()
+        dones = torch.logical_not(masks)
+        return dones.any(), dones
+
+    def get_buffer_slice(self,
+                         key: str,
+                         index: int,
+                         env_index,
+                         c_length: int = 8):
+        # Check first if the index is smaller than the c_length
+        if index < c_length:
+            # Calculate the upper index from which to start slicing
+            upper_index = index + self.numsteps - c_length
+            # Check if buffer slice is TensorDict or Tensor
+            if isinstance(self.buffers[key], TensorDict):
+                # Create a new TensorDict
+                buffer_slice = TensorDict()
+                # Iterate through the keys of the TensorDict
+                for k in self.buffers[key]:
+                    # Concatenate with the slice from the beginning of the buffer
+                    # TODO use torch.roll
+                    buffer_slice[k] = torch.cat((self.buffers[key][k][upper_index:self.numsteps, env_index],
+                                                 self.buffers[key][k][0: index, env_index]))
+                return buffer_slice
+            # Concatenate with the slice from the beginning of the buffer
+            # TODO use torch.roll
+            else:
+                return torch.cat((self.buffers[key][upper_index:self.numsteps, env_index],
+                                  self.buffers[key][0: index, env_index]))
+        else:
+            return self.buffers[key][index - c_length: index, env_index]
+
+    def set_buffer_slice(self, buffer_slice, key: str, index: int, env_index, c_length: int = 8):
+        # Check if buffer slice is TensorDict or Tensor
+        if isinstance(self.buffers[key], TensorDict):
+            # Iterate through the keys of the TensorDict
+            for k in self.buffers[key]:
+                # Check first if the c_length is greater than the remaining buffer length
+                if c_length > self.numsteps + 1 - index:
+                    self.buffers[key][k][index:-1, env_index] = buffer_slice[k][0:c_length - self.numsteps - 1 + index]
+                else:
+                    self.buffers[key][k][index:index + c_length, env_index] = buffer_slice[k]
+        else:
+            # Check first if the c_length is greater than the remaining buffer length
+            if c_length > self.numsteps + 1 - index:
+                self.buffers[key][index:-1, env_index] = buffer_slice[0:c_length - self.numsteps - 1 + index]
+            else:
+                self.buffers[key][index:index + c_length, env_index] = buffer_slice
 
     def recurrent_generator(self, num_mini_batch) -> Iterator[TensorDict]:
         num_environments = self.buffers["actions"].size(1)
@@ -180,8 +253,8 @@ class RolloutStorage:
                 )
             )
         for inds in torch.arange(num_environments).chunk(num_mini_batch):
-            batch = self.buffers[0: self.current_rollout_step_idx, inds]
-            batch["next_observations"] = self.buffers['observations'][1: self.current_rollout_step_idx + 1, inds]
+            batch = self.buffers[0: self.numsteps, inds]
+            batch["next_observations"] = self.buffers['observations'][1: self.numsteps + 1, inds]
             temp_dict = {}
             for k in self.recurrent_hidden_states:
                 temp_dict[k] = self.recurrent_hidden_states[k][0:1, inds]

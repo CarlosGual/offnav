@@ -501,47 +501,12 @@ class IQLRNNAgent(nn.Module):
         num_total_updates = 50000
 
         for batch in data_generator:
-            # obs = batch["observations"]
-            # actions = batch["actions"]
-            # rewards = batch["rewards"]
-            # next_obs = batch["next_observations"]
-            # masks = batch["masks"]
-            terminals = torch.logical_not(batch["masks"]).to('cpu')
-
-            # Get only the k-est steps before the terminal state
-            # k = np.maximum(int(np.ceil(num_updates_done * (num_steps_episode/num_total_updates))), 5)
-            k = 64
-            terminal_indexes = torch.nonzero(terminals.squeeze()).squeeze()
-            if terminal_indexes.dim() == 0:
-                continue
-            if len(terminal_indexes) == 0:
-                continue
-            final_indexes = []
-            # Redo masks and terminals
-            masks = []
-            terminals = []
-            for index in terminal_indexes:
-                if index <= k:
-                    continue
-                for i in range(index - k, index):
-                    final_indexes.append(i)
-                    # If we are not at the end of the episode
-                    if i == index - k:
-                        masks.append(False)
-                        terminals.append(False)
-                    # When we finish the episode
-                    elif i == index - 1:
-                        masks.append(True)
-                        terminals.append(True)
-                    else:
-                        masks.append(True)
-                        terminals.append(False)
-            actions = batch["actions"][final_indexes]
-            rewards = batch["rewards"][final_indexes]
-            masks = torch.tensor(masks, dtype=torch.bool, device=self.device).unsqueeze(1)
-            terminals = torch.tensor(terminals, dtype=torch.bool, device=self.device).unsqueeze(1)
-            obs = batch["observations"][final_indexes]
-            next_obs = batch["next_observations"][final_indexes]
+            obs = batch["observations"]
+            actions = batch["actions"]
+            rewards = batch["rewards"]
+            next_obs = batch["next_observations"]
+            masks = batch["masks"]
+            terminals = torch.logical_not(batch["masks"])
             rnn_hidden_states = batch["recurrent_hidden_states"]
 
             # Put all predictions together

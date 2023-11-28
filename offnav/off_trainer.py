@@ -214,6 +214,22 @@ class OffEnvDDTrainer(PPOTrainer):
         )
         self.rollouts.to(self.device)
 
+        self.rollouts_curricula = RolloutStorage(
+            il_cfg.num_steps,
+            self.envs.num_envs,
+            obs_space,
+            self.policy_action_space,
+            policy_cfg.STATE_ENCODER.hidden_size,
+            is_double_buffered=il_cfg.use_double_buffered_sampler,
+            num_recurrent_layers=self.actor_critic.net.num_recurrent_layers,
+            action_shape=action_shape,
+            discrete_actions=discrete_actions,
+        )
+        self.rollouts_curricula.to(self.device)
+
+        # TODO: add support for increasing c_length
+        self.c_length = 8
+
         observations = self.envs.reset()
         batch = batch_obs(
             observations, device=self.device, cache=self._obs_batching_cache
@@ -481,12 +497,34 @@ class OffEnvDDTrainer(PPOTrainer):
 
         self.agent.train()
 
-        stats, rnn_hiden_states, action_distributions = self.agent.update(self.rollouts, self.num_steps_done, self.num_updates_done)
+        stats, rnn_hidden_states, action_distributions = self.agent.update(self.rollouts_curricula, self.num_steps_done,
+                                                                           self.num_updates_done)
 
-        self.rollouts.after_update(rnn_hiden_states)
+        self.rollouts_curricula.after_update(rnn_hidden_states)
         self.pth_time += time.time() - t_update_model
 
         return stats, action_distributions
+
+    def _copy_rollout_curricula(self, dones):
+        # Check which environment is done:
+        env_done_idxs = dones.nonzero()
+        # Copy only the keys needed
+        keys = ["observations", "actions", "rewards", "masks"]
+        # Get the indices from the rollouts
+        index = self.rollouts.current_rollout_step_idx + 1
+        index_curricula = self.rollouts_curricula.env_step_idxs
+        # Copy the data
+        for env_index in env_done_idxs:
+            if self.rollouts_curricula.env_full_idxs[env_index]:
+                continue
+            for key in keys:
+                current_buffer_slice = self.rollouts.get_buffer_slice(key, index, env_index, self.c_length)
+                self.rollouts_curricula.set_buffer_slice(current_buffer_slice, key, index_curricula[env_index],
+                                                         env_index,
+                                                         self.c_length)
+            # Update the current rollout curricula step index
+            self.rollouts_curricula.env_step_idxs[env_index] += self.c_length
+        return all(self.rollouts_curricula.env_full_idxs)
 
     @profiling_wrapper.RangeContext("train")
     def train(self) -> None:
@@ -585,13 +623,12 @@ class OffEnvDDTrainer(PPOTrainer):
                 profiling_wrapper.range_push("_collect_rollout_step")
                 for buffer_index in range(self._nbuffers):
                     self._compute_actions_and_step_envs(buffer_index)
-
-                for step in range(il_cfg.num_steps):
-                    is_last_step = (
-                            self.should_end_early(step + 1)
-                            or (step + 1) == il_cfg.num_steps
-                    )
-
+                i = 0
+                print('----------------------------------')
+                batch_full = False
+                while not batch_full:
+                    print(i)
+                    i += 1
                     for buffer_index in range(self._nbuffers):
                         count_steps_delta += self._collect_environment_result(
                             buffer_index
@@ -600,16 +637,18 @@ class OffEnvDDTrainer(PPOTrainer):
                         if (buffer_index + 1) == self._nbuffers:
                             profiling_wrapper.range_pop()  # _collect_rollout_step
 
-                        if not is_last_step:
-                            if (buffer_index + 1) == self._nbuffers:
-                                profiling_wrapper.range_push(
-                                    "_collect_rollout_step"
-                                )
+                        # if not is_last_step:
+                        if (buffer_index + 1) == self._nbuffers:
+                            profiling_wrapper.range_push(
+                                "_collect_rollout_step"
+                            )
 
-                            self._compute_actions_and_step_envs(buffer_index)
+                        self._compute_actions_and_step_envs(buffer_index)
 
-                    if is_last_step:
-                        break
+                        check_done, dones = self.rollouts.check_done()
+                        self.rollouts.check_and_restore_rollout_full()
+                        if check_done:
+                            batch_full = self._copy_rollout_curricula(dones)
 
                 profiling_wrapper.range_pop()  # rollouts loop
 
