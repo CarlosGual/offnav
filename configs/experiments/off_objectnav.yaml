@@ -4,15 +4,15 @@ ENV_NAME: "NavRLEnv"
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
 VIDEO_OPTION: [disk]
-TENSORBOARD_DIR: "tb/action_distributions"
+TENSORBOARD_DIR: "tb/eval_pre_trained_good"
 VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
-EVAL_CKPT_PATH_DIR: "data/new_checkpoints/ckpt.99.pth"
+EVAL_CKPT_PATH_DIR: "data/new_checkpoints"
 NUM_ENVIRONMENTS: 2
 CHECKPOINT_FOLDER: "data/new_checkpoints"
 TRAINER_NAME: "offnav"
 SENSORS: ["RGB_SENSOR"]
-NUM_UPDATES: 500000
+NUM_UPDATES: 100
 LOG_INTERVAL: 10
 NUM_CHECKPOINTS: 100
 # Force PyTorch to be single threaded as

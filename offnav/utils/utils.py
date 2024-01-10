@@ -59,6 +59,20 @@ def load_encoder(encoder, path):
         raise ValueError("unknown encoder backbone")
 
 
+def adapt_state_dict(saved_state_dict, module_names):
+    new_state_dict = {}
+
+    for name in module_names:
+        for k, v in saved_state_dict.items():
+            if k.startswith("model.net"):
+                new_state_dict[k.replace("model.net", f"actor_critic.{name}")] = v
+            elif k.startswith("model.action_distribution") and name == "net":
+                new_state_dict[k.replace("model", "actor_critic")] = v
+            else:
+                continue
+    return new_state_dict
+
+
 def observations_to_image(observation: Dict, info: Dict) -> np.ndarray:
     r"""Generate image of single frame from observation and info
     returned from a single environment step().
@@ -99,7 +113,7 @@ def observations_to_image(observation: Dict, info: Dict) -> np.ndarray:
         render_obs_images.append(rgb)
 
     assert (
-        len(render_obs_images) > 0
+            len(render_obs_images) > 0
     ), "Expected at least one visual sensor enabled."
 
     # shapes_are_equal = len(set(x.shape for x in render_obs_images)) == 1
@@ -122,14 +136,14 @@ def observations_to_image(observation: Dict, info: Dict) -> np.ndarray:
 
 
 def generate_video(
-    video_option: List[str],
-    video_dir: Optional[str],
-    images: List[np.ndarray],
-    episode_id: Union[int, str],
-    checkpoint_idx: int,
-    metrics: Dict[str, float],
-    fps: int = 10,
-    verbose: bool = True,
+        video_option: List[str],
+        video_dir: Optional[str],
+        images: List[np.ndarray],
+        episode_id: Union[int, str],
+        checkpoint_idx: int,
+        metrics: Dict[str, float],
+        fps: int = 10,
+        verbose: bool = True,
 ) -> None:
     r"""Generate video according to specified information.
 
@@ -205,8 +219,8 @@ def _to_tensor(v: Union[Tensor, ndarray]) -> torch.Tensor:
 @torch.no_grad()
 @profiling_wrapper.RangeContext("batch_obs")
 def batch_obs(
-    observations: List[Dict],
-    device: Optional[torch.device] = None,
+        observations: List[Dict],
+        device: Optional[torch.device] = None,
 ) -> Dict[str, torch.Tensor]:
     r"""Transpose a batch of observation dicts to a dict of batched
     observations.
@@ -234,7 +248,7 @@ def batch_obs(
 
 
 def linear_warmup(
-    epoch: int, start_update: int, max_updates: int, start_lr: int, end_lr: int
+        epoch: int, start_update: int, max_updates: int, start_lr: int, end_lr: int
 ) -> float:
     r"""Returns a multiplicative factor for linear value decay
 
@@ -264,7 +278,7 @@ def linear_warmup(
 
 
 def critic_linear_decay(
-    epoch: int, start_update: int, max_updates: int, start_lr: int, end_lr: int
+        epoch: int, start_update: int, max_updates: int, start_lr: int, end_lr: int
 ) -> float:
     r"""Returns a multiplicative factor for linear value decay
 
@@ -298,3 +312,7 @@ def soft_update_from_to(source, target, tau):
         target_param.data.copy_(
             target_param.data * (1.0 - tau) + param.data * tau
         )
+
+
+def load_pretrained_checkpoint(checkpoint_path):
+    return torch.load(checkpoint_path, map_location="cpu")

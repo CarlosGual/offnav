@@ -53,7 +53,7 @@ from torch.optim.lr_scheduler import LambdaLR
 
 from offnav.algos.agent import DDPILAgent, OffIQLAgent, OffIQLRNNAgent
 from offnav.common.rollout_storage import RolloutStorage
-from offnav.utils.utils import write_dataset
+from offnav.utils.utils import load_pretrained_checkpoint, adapt_state_dict
 
 
 @baseline_registry.register_trainer(name="offnav")
@@ -507,26 +507,37 @@ class OffEnvDDTrainer(PPOTrainer):
         )
 
         resume_state = load_resume_state(self.config)
-        if resume_state is not None:
-            self.agent.load_state_dict(resume_state["state_dict"])
-            self.agent.policy_optimizer.load_state_dict(resume_state["optim_state"])
-            lr_scheduler.load_state_dict(resume_state["lr_sched_state"])
+        # if resume_state is not None:
+        #     self.agent.load_state_dict(resume_state["state_dict"])
+        #     self.agent.policy_optimizer.load_state_dict(resume_state["optim_state"])
+        #     lr_scheduler.load_state_dict(resume_state["lr_sched_state"])
+        #
+        #     requeue_stats = resume_state["requeue_stats"]
+        #     self.env_time = requeue_stats["env_time"]
+        #     self.pth_time = requeue_stats["pth_time"]
+        #     self.num_steps_done = requeue_stats["num_steps_done"]
+        #     self.num_updates_done = requeue_stats["num_updates_done"]
+        #     self._last_checkpoint_percent = requeue_stats[
+        #         "_last_checkpoint_percent"
+        #     ]
+        #     count_checkpoints = requeue_stats["count_checkpoints"]
+        #     prev_time = requeue_stats["prev_time"]
+        #
+        #     self.running_episode_stats = requeue_stats["running_episode_stats"]
+        #     self.window_episode_stats.update(
+        #         requeue_stats["window_episode_stats"]
+        #     )
 
-            requeue_stats = resume_state["requeue_stats"]
-            self.env_time = requeue_stats["env_time"]
-            self.pth_time = requeue_stats["pth_time"]
-            self.num_steps_done = requeue_stats["num_steps_done"]
-            self.num_updates_done = requeue_stats["num_updates_done"]
-            self._last_checkpoint_percent = requeue_stats[
-                "_last_checkpoint_percent"
-            ]
-            count_checkpoints = requeue_stats["count_checkpoints"]
-            prev_time = requeue_stats["prev_time"]
-
-            self.running_episode_stats = requeue_stats["running_episode_stats"]
-            self.window_episode_stats.update(
-                requeue_stats["window_episode_stats"]
-            )
+        logger.info('Loading pretrained checkpoint')
+        prev_checkpoint = load_pretrained_checkpoint('data/objectnav_il_hd.ckpt')
+        # Get the submodule names from actor_critic
+        module_names = [named_children[0] for named_children in list(self.actor_critic.named_children())]
+        # Drop action distribution from module_names
+        module_names.remove("action_distribution")
+        logger.info(f'Adapting state dict to {module_names}')
+        new_state_dict = adapt_state_dict(prev_checkpoint['state_dict'], module_names)
+        logger.info(f'Loading adapted state dict into actor critic')
+        self.agent.load_state_dict(new_state_dict, strict=False)
 
         ppo_cfg = self.config.RL.PPO
         il_cfg = self.config.IL.BehaviorCloning
@@ -810,12 +821,12 @@ class OffEnvDDTrainer(PPOTrainer):
             policy_cfg.STATE_ENCODER.hidden_size,
             device=self.device,
         )
-        # prev_actions = torch.zeros(
-        #     self.config.NUM_ENVIRONMENTS,
-        #     *action_shape,
-        #     device=self.device,
-        #     dtype=torch.long if discrete_actions else torch.float,
-        # )
+        prev_actions = torch.zeros(
+            self.config.NUM_ENVIRONMENTS,
+            *action_shape,
+            device=self.device,
+            dtype=torch.long if discrete_actions else torch.float,
+        )
 
         not_done_masks = torch.zeros(
             self.config.NUM_ENVIRONMENTS,
@@ -862,7 +873,7 @@ class OffEnvDDTrainer(PPOTrainer):
                 ) = self.actor_critic.act(
                     batch,
                     test_recurrent_hidden_states,
-                    None,
+                    prev_actions,
                     not_done_masks,
                     deterministic=True,
                 )

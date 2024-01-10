@@ -35,10 +35,12 @@ class ObjectNavPolicyRNNNet(Net):
             hidden_size: int,
             rnn_type: str,
             num_recurrent_layers: int,
+            is_policy: bool = False,
     ):
         super().__init__()
         self.policy_config = policy_config
         self.use_actions = use_actions
+        self.is_policy = is_policy
         rnn_input_size = 0
 
         rgb_config = policy_config.RGB_ENCODER
@@ -51,6 +53,9 @@ class ObjectNavPolicyRNNNet(Net):
         self.visual_transform.randomize_environments = (
             rgb_config.randomize_augmentations_over_envs
         )
+
+        logger.info("******************************** Loading module: {} ********************************".format(
+            self.__class__.__name__))
 
         self.visual_encoder = VisualEncoder(
             image_size=rgb_config.image_size,
@@ -119,6 +124,10 @@ class ObjectNavPolicyRNNNet(Net):
             self.action_embedding = nn.Embedding(num_actions + 1, 32)
             rnn_input_size += self.action_embedding.embedding_dim
 
+        if policy_config.SEQ2SEQ.use_action and self.is_policy:
+            self.prev_action_embedding = nn.Embedding(num_actions + 1, 32)
+            rnn_input_size += self.prev_action_embedding.embedding_dim
+
         self.rnn_input_size = rnn_input_size
 
         # load pretrained weights
@@ -164,7 +173,7 @@ class ObjectNavPolicyRNNNet(Net):
     def num_recurrent_layers(self):
         return self.state_encoder.num_recurrent_layers
 
-    def forward(self, observations, rnn_hidden_states, actions, masks):
+    def forward(self, observations, rnn_hidden_states, actions, prev_actions, masks):
         r"""
         instruction_embedding: [batch_size x INSTRUCTION_ENCODER.output_size]
         depth_embedding: [batch_size x DEPTH_ENCODER.output_size]
@@ -227,6 +236,12 @@ class ObjectNavPolicyRNNNet(Net):
             )
             x.append(actions_embedding)
 
+        if self.policy_config.SEQ2SEQ.use_action and self.is_policy:
+            prev_actions_embedding = self.prev_action_embedding(
+                ((prev_actions.float() + 1) * masks).long().squeeze(dim=-1)
+            )
+            x.append(prev_actions_embedding)
+
         x = torch.cat(x, dim=1)
 
         x, rnn_hidden_states = self.state_encoder(
@@ -268,13 +283,13 @@ class ObjectNavQRNNNet(ObjectNavPolicyRNNNet):
                 critic_hidden_dim,
             )
 
-    def forward(self, observations, rnn_hidden_states, actions, masks):
+    def forward(self, observations, rnn_hidden_states, actions, prev_actions, masks):
         r"""
         instruction_embedding: [batch_size x INSTRUCTION_ENCODER.output_size]
         depth_embedding: [batch_size x DEPTH_ENCODER.output_size]
         rgb_embedding: [batch_size x RGB_ENCODER.output_size]
         """
-        features, rnn_hidden_states = super().forward(observations, rnn_hidden_states, actions, masks)
+        features, rnn_hidden_states = super().forward(observations, rnn_hidden_states, actions, prev_actions, masks)
         value = self.critic(features)
         return value, rnn_hidden_states
 
@@ -301,6 +316,7 @@ class ObjectNavIQLRNNPolicy(IQLRNNPolicy):
                 hidden_size=hidden_size,
                 rnn_type=rnn_type,
                 num_recurrent_layers=num_recurrent_layers,
+                is_policy=True,
             ),
             action_space.n,
         )

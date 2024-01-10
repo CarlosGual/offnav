@@ -217,13 +217,13 @@ class IQLRNNPolicy(nn.Module, Policy):
         self,
         observations,
         rnn_hidden_states,
-        actions,
+        prev_actions,
         masks,
         deterministic=False,
         return_distribution=False,
     ):
         features, rnn_hidden_states = self.net(
-            observations, rnn_hidden_states, actions, masks
+            observations, rnn_hidden_states, None, prev_actions, masks
         )
         distribution = self.action_distribution(features)
 

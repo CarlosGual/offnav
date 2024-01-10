@@ -500,16 +500,17 @@ class IQLRNNAgent(nn.Module):
             masks = batch["masks"]
             terminals = torch.logical_not(batch["masks"]).float()
             rnn_hidden_states = batch["recurrent_hidden_states"]
+            prev_actions = batch["prev_actions"]
 
             # Put all predictions together
-            q1_pred, rnn_hidden_q1 = self.actor_critic.qf1(obs, rnn_hidden_states['qf1'], actions, masks)
+            q1_pred, rnn_hidden_q1 = self.actor_critic.qf1(obs, rnn_hidden_states['qf1'], actions, prev_actions, masks)
             # q2_pred, rnn_hidden_q2 = self.actor_critic.qf2(obs, rnn_hidden_states, actions, masks)
             target_vf_pred = self.actor_critic.vf(next_obs, actions).detach()
-            tq1_pred, rnn_hidden_tq1 = self.actor_critic.target_qf1(obs, rnn_hidden_states['tqf1'], actions, masks)
+            tq1_pred, rnn_hidden_tq1 = self.actor_critic.target_qf1(obs, rnn_hidden_states['tqf1'], actions, prev_actions, masks)
             # tq2_pred, rnn_hidden_tq2 = self.actor_critic.target_qf2(obs, rnn_hidden_states, actions, masks)
             q_pred = tq1_pred.detach()
             vf_pred = self.actor_critic.vf(obs, actions)
-            dist, rnn_hidden_policy, entropy = self.actor_critic(obs, rnn_hidden_states['policy'], actions, masks)
+            dist, rnn_hidden_policy, entropy = self.actor_critic(obs, rnn_hidden_states['policy'], actions, prev_actions, masks)
 
             """
             QF Loss
