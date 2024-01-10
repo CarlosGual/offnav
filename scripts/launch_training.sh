@@ -1,12 +1,12 @@
 #!/bin/bash
-export NUM_GPUS=8
+export NUM_GPUS=4
 export GLOG_minloglevel=2
 export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
 
 config="configs/experiments/off_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_minimal"
-TENSORBOARD_DIR="tb/rnn/action_distributions"
+TENSORBOARD_DIR="tb/initialized_bc/action_distributions"
 CHECKPOINT_DIR="data/new_checkpoints"
 
 
