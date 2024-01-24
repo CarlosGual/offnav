@@ -50,7 +50,7 @@ from torch import nn as nn
 from torch.optim.lr_scheduler import LambdaLR
 
 from offnav.algos.agent import DDPILAgent
-from offnav.common.rollout_storage import RolloutStorage
+from offnav.common.rollout_storage import ILRolloutStorage
 from offnav.utils.utils import write_dataset
 
 
@@ -201,7 +201,7 @@ class ILEnvDDPTrainer(PPOTrainer):
 
         self._nbuffers = 2 if il_cfg.use_double_buffered_sampler else 1
 
-        self.rollouts = RolloutStorage(
+        self.rollouts = ILRolloutStorage(
             il_cfg.num_steps,
             self.envs.num_envs,
             obs_space,
@@ -613,7 +613,10 @@ class ILEnvDDPTrainer(PPOTrainer):
         self._setup_actor_critic_agent(il_cfg)
 
         if self.agent.actor_critic.should_load_agent_state:
-            self.agent.load_state_dict(ckpt_dict["state_dict"])
+            state_dict = {
+                k.replace("model.", "actor_critic."): v for k, v in ckpt_dict["state_dict"].items()
+            }
+            self.agent.load_state_dict(state_dict)
         self.actor_critic = self.agent.actor_critic
 
         observations = self.envs.reset()
