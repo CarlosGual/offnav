@@ -17,6 +17,6 @@ python -u -m run \
     TENSORBOARD_DIR $TENSORBOARD_DIR \
     CHECKPOINT_FOLDER $CHECKPOINT_DIR \
     NUM_UPDATES 50000 \
-    NUM_ENVIRONMENTS 120 \
+    NUM_ENVIRONMENTS 20 \
     RL.DDPPO.force_distributed True \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz" \
