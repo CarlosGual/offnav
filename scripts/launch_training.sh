@@ -5,8 +5,8 @@ export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
 
 config="configs/experiments/off_objectnav.yaml"
-DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_minimal"
-TENSORBOARD_DIR="tb/initialized_bc/action_distributions"
+DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd"
+TENSORBOARD_DIR="tb/initialized_bc/good_initialization/"
 CHECKPOINT_DIR="data/new_checkpoints"
 
 
@@ -19,7 +19,7 @@ python -u -m torch.distributed.launch \
     --run-type train \
     TENSORBOARD_DIR $TENSORBOARD_DIR \
     CHECKPOINT_FOLDER $CHECKPOINT_DIR \
-    NUM_UPDATES 50000 \
+    NUM_UPDATES 500000 \
     NUM_ENVIRONMENTS 8 \
     RL.DDPPO.force_distributed True \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz" \
