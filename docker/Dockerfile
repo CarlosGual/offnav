@@ -64,6 +64,9 @@ RUN /bin/bash -c ". activate habitat; pip install gym==0.22.0 urllib3==1.25.11"
 RUN git clone https://github.com/carlosgual/habitat-lab.git
 RUN /bin/bash -c ". activate habitat; cd habitat-lab; python setup.py develop --all"
 
+# Install wandb
+RUN /bin/bash -c ". activate habitat; pip install wandb"
+
 # Silence habitat-sim logs
 ENV GLOG_minloglevel=2
 ENV MAGNUM_LOG="quiet"
