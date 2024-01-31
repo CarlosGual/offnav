@@ -6,7 +6,7 @@ export HABITAT_SIM_LOG=quiet
 
 config="configs/experiments/off_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd"
-TENSORBOARD_DIR="tb/initialized_bc/good_initialization_2"
+TENSORBOARD_DIR="tb/initialized_bc/good_initialization_lowerlr3e-5"
 CHECKPOINT_DIR="data/new_checkpoints"
 
 
@@ -21,5 +21,6 @@ python -u -m torch.distributed.launch \
     CHECKPOINT_FOLDER $CHECKPOINT_DIR \
     NUM_UPDATES 500000 \
     NUM_ENVIRONMENTS 6 \
+    WANDB_ENABLED True \
     RL.DDPPO.force_distributed True \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz" \

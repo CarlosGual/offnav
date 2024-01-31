@@ -11,7 +11,7 @@ CONFIG_FILE_SEPARATOR = ","
 # TASK CONFIG
 # -----------------------------------------------------------------------------
 
-# fmt:off
+# fmt:OFFLINE
 _TASK_CONFIG = _HABITAT_CONFIG.clone()
 _TASK_CONFIG.defrost()
 
@@ -87,13 +87,14 @@ _CONFIG.VERBOSE = True
 
 _CONFIG.BASE_TASK_CONFIG_PATH = "configs/tasks/objectnav_hm3d.yaml"
 
-_CONFIG.TRAINER_NAME = "offnav-ddppo"
+_CONFIG.TRAINER_NAME = "OFFLINEnav-ddppo"
 _CONFIG.ENV_NAME = "SimpleRLEnv"
 _CONFIG.SENSORS = ["RGB_SENSOR"]
 
 _CONFIG.VIDEO_OPTION = []
 _CONFIG.VIDEO_DIR = "data/video"
 _CONFIG.TENSORBOARD_DIR = "data/tensorboard"
+_CONFIG.WANDB_ENABLED = False
 _CONFIG.EVAL_CKPT_PATH_DIR = "data/checkpoints"
 _CONFIG.CHECKPOINT_FOLDER = "data/checkpoints"
 _CONFIG.LOG_FILE = "data/train.log"
@@ -139,30 +140,35 @@ _CONFIG.IL.BehaviorCloning.use_double_buffered_sampler = False
 _CONFIG.IL.BehaviorCloning.hidden_size = 2048
 
 ##############################################
-# OFF config
+# OFFLINE config
 ##############################################
 
-_CONFIG.OFF = CN()
-_CONFIG.OFF.POLICY = CN()
-_CONFIG.OFF.POLICY.name = "ObjectNavIQLPolicy"
-_CONFIG.OFF.POLICY.USE_IW = True
-_CONFIG.OFF.POLICY.distrib_backend = "NCCL"
-_CONFIG.OFF.BehaviorCloning = CN()
-_CONFIG.OFF.BehaviorCloning.lr = 0.001
-_CONFIG.OFF.BehaviorCloning.encoder_lr = 0.001
-_CONFIG.OFF.BehaviorCloning.entropy_coef = 0.0
-_CONFIG.OFF.BehaviorCloning.eps = 1.0e-5
-_CONFIG.OFF.BehaviorCloning.wd = 0.0
-_CONFIG.OFF.BehaviorCloning.clip_param = 0.2
-_CONFIG.OFF.BehaviorCloning.num_mini_batch = 2
-_CONFIG.OFF.BehaviorCloning.max_grad_norm = 0.2
-_CONFIG.OFF.BehaviorCloning.num_steps = 64
-_CONFIG.OFF.BehaviorCloning.use_linear_clip_decay = False
-_CONFIG.OFF.BehaviorCloning.use_linear_lr_decay = True
-_CONFIG.OFF.BehaviorCloning.reward_window_size = 50
-_CONFIG.OFF.BehaviorCloning.sync_frac = 0.6
-_CONFIG.OFF.BehaviorCloning.use_double_buffered_sampler = False
-_CONFIG.OFF.BehaviorCloning.hidden_size = 2048
+_CONFIG.OFFLINE = CN()
+_CONFIG.OFFLINE.POLICY = CN()
+_CONFIG.OFFLINE.POLICY.name = "ObjectNavIQLPolicy"
+_CONFIG.OFFLINE.POLICY.USE_IW = True
+_CONFIG.OFFLINE.POLICY.distrib_backend = "NCCL"
+_CONFIG.OFFLINE.IQL = CN()
+_CONFIG.OFFLINE.IQL.lr = 0.001
+_CONFIG.OFFLINE.IQL.encoder_lr = 0.001
+_CONFIG.OFFLINE.IQL.entropy_coef = 0.0
+_CONFIG.OFFLINE.IQL.eps = 1.0e-5
+_CONFIG.OFFLINE.IQL.wd = 0.0
+_CONFIG.OFFLINE.IQL.clip_param = 0.2
+_CONFIG.OFFLINE.IQL.num_mini_batch = 2
+_CONFIG.OFFLINE.IQL.max_grad_norm = 0.2
+_CONFIG.OFFLINE.IQL.num_steps = 64
+_CONFIG.OFFLINE.IQL.use_linear_clip_decay = False
+_CONFIG.OFFLINE.IQL.use_linear_lr_decay = True
+_CONFIG.OFFLINE.IQL.reward_window_size = 50
+_CONFIG.OFFLINE.IQL.sync_frac = 0.6
+_CONFIG.OFFLINE.IQL.use_double_buffered_sampler = False
+_CONFIG.OFFLINE.IQL.hidden_size = 2048
+_CONFIG.OFFLINE.IQL.policy_lr = 3e-4
+_CONFIG.OFFLINE.IQL.qf_lr = 3e-4
+_CONFIG.OFFLINE.IQL.policy_update_period = 1
+_CONFIG.OFFLINE.IQL.q_update_period = 1
+_CONFIG.OFFLINE.IQL.target_update_period = 1
 
 ##############################################
 # Policy config

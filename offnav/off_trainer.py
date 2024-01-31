@@ -89,9 +89,11 @@ class OffEnvDDTrainer(PPOTrainer):
             actor_critic=self.actor_critic,
             num_envs=self.envs.num_envs,
             num_mini_batch=off_cfg.num_mini_batch,
-            policy_update_period=1,
-            q_update_period=1,
-            target_update_period=1,
+            policy_lr=off_cfg.policy_lr,
+            qf_lr=off_cfg.qf_lr,
+            policy_update_period=off_cfg.policy_update_period,
+            q_update_period=off_cfg.q_update_period,
+            target_update_period=off_cfg.target_update_period,
             eps=off_cfg.eps,
         )
 
@@ -163,7 +165,7 @@ class OffEnvDDTrainer(PPOTrainer):
             action_shape = None
             discrete_actions = True
 
-        il_cfg = self.config.IL.BehaviorCloning
+        il_cfg = self.config.OFFLINE.IQL
         policy_cfg = self.config.POLICY
         if torch.cuda.is_available():
             self.device = torch.device("cuda", self.config.TORCH_GPU_ID)

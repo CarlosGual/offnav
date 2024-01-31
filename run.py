@@ -9,7 +9,7 @@ import numba
 import quaternion
 import torch
 import habitat
-
+from habitat_baselines.rl.ddppo.ddp_utils import rank0_only
 from habitat import logger
 from habitat.config import Config
 from habitat_baselines.common.baseline_registry import baseline_registry
@@ -88,8 +88,7 @@ def run_exp(exp_config: str, run_type: str, opts=None) -> None:
     """
 
     config = get_config(exp_config, opts)
-    print(os.environ['LOCAL_RANK'])
-    if os.environ['LOCAL_RANK'] == '0':
+    if rank0_only() and config.WANDB_ENABLED:
         wandb.init(project="offnav", name=f'{run_type}-{config.TENSORBOARD_DIR.split("/")[-1]}', sync_tensorboard=True,
                    config=config)
     execute_exp(config, run_type)
