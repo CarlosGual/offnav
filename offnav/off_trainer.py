@@ -201,15 +201,15 @@ class OffEnvDDTrainer(PPOTrainer):
                 }
             )
 
-        self._nbuffers = 2 if il_cfg.use_double_buffered_sampler else 1
+        self._nbuffers = 2 if off_cfg.use_double_buffered_sampler else 1
 
         self.rollouts = RolloutStorage(
-            il_cfg.num_steps,
+            off_cfg.num_steps,
             self.envs.num_envs,
             obs_space,
             self.policy_action_space,
             policy_cfg.STATE_ENCODER.hidden_size,
-            is_double_buffered=il_cfg.use_double_buffered_sampler,
+            is_double_buffered=off_cfg.use_double_buffered_sampler,
             num_recurrent_layers=self.actor_critic.net.num_recurrent_layers,
             action_shape=action_shape,
             discrete_actions=discrete_actions,
@@ -234,7 +234,7 @@ class OffEnvDDTrainer(PPOTrainer):
             reward=torch.zeros(self.envs.num_envs, 1),
         )
         self.window_episode_stats = defaultdict(
-            lambda: deque(maxlen=il_cfg.reward_window_size)
+            lambda: deque(maxlen=off_cfg.reward_window_size)
         )
 
         self.env_time = 0.0
@@ -542,7 +542,7 @@ class OffEnvDDTrainer(PPOTrainer):
         self.agent.load_state_dict(new_state_dict, strict=False)
 
         ppo_cfg = self.config.RL.PPO
-        il_cfg = self.config.IL.BehaviorCloning
+        off_cfg = self.config.IL.BehaviorCloning
 
         with (
                 get_writer(self.config, flush_secs=self.flush_secs)
@@ -553,8 +553,8 @@ class OffEnvDDTrainer(PPOTrainer):
                 profiling_wrapper.on_start_step()
                 profiling_wrapper.range_push("train update")
 
-                if il_cfg.use_linear_clip_decay:
-                    self.agent.clip_param = il_cfg.clip_param * (
+                if off_cfg.use_linear_clip_decay:
+                    self.agent.clip_param = off_cfg.clip_param * (
                             1 - self.percent_done()
                     )
 
@@ -599,10 +599,10 @@ class OffEnvDDTrainer(PPOTrainer):
                 for buffer_index in range(self._nbuffers):
                     self._compute_actions_and_step_envs(buffer_index)
 
-                for step in range(il_cfg.num_steps):
+                for step in range(off_cfg.num_steps):
                     is_last_step = (
                             self.should_end_early(step + 1)
-                            or (step + 1) == il_cfg.num_steps
+                            or (step + 1) == off_cfg.num_steps
                     )
 
                     for buffer_index in range(self._nbuffers):
@@ -631,7 +631,7 @@ class OffEnvDDTrainer(PPOTrainer):
 
                 stats, action_distributions = self._update_agent()
 
-                if il_cfg.use_linear_lr_decay:
+                if off_cfg.use_linear_lr_decay:
                     lr_scheduler.step()  # type: ignore
 
                 self.num_updates_done += 1
@@ -799,9 +799,9 @@ class OffEnvDDTrainer(PPOTrainer):
                 action_shape = (1,)
                 discrete_actions = True
 
-        il_cfg = config.IL.BehaviorCloning
+        off_cfg = config.IL.BehaviorCloning
         policy_cfg = config.POLICY
-        self._setup_actor_critic_agent(il_cfg)
+        self._setup_actor_critic_agent(off_cfg)
 
         if self.agent.actor_critic.should_load_agent_state:
             self.agent.load_state_dict(ckpt_dict["state_dict"])
