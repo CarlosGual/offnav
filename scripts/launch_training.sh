@@ -6,7 +6,7 @@ export HABITAT_SIM_LOG=quiet
 
 config="configs/experiments/off_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd"
-TENSORBOARD_DIR="tb/initialized_bc/good_initialization_2/"
+TENSORBOARD_DIR="tb/initialized_bc/good_initialization_2"
 CHECKPOINT_DIR="data/new_checkpoints"
 
 
