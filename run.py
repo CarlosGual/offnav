@@ -91,6 +91,7 @@ def run_exp(exp_config: str, run_type: str, local_rank: str, opts=None) -> None:
     """
 
     config = get_config(exp_config, opts)
+    print(local_rank)
     if local_rank == 0:
         wandb.init(project="offnav", name=f'{run_type}-{config.TENSORBOARD_DIR.split("/")[-1]}', sync_tensorboard=True,
                    config=config)
