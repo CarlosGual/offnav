@@ -88,8 +88,7 @@ def run_exp(exp_config: str, run_type: str, opts=None) -> None:
     """
 
     config = get_config(exp_config, opts)
-    if os.getenv('LOCAL_RANK') == 0 and config.WANDB_ENABLED:
-        print(rank0_only())
+    if os.getenv('LOCAL_RANK') == '0' and config.WANDB_ENABLED:
         wandb.init(project="offnav", name=f'{run_type}-{config.TENSORBOARD_DIR.split("/")[-1]}', sync_tensorboard=True,
                    config=config)
     execute_exp(config, run_type)

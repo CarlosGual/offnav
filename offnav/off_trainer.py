@@ -165,7 +165,7 @@ class OffEnvDDTrainer(PPOTrainer):
             action_shape = None
             discrete_actions = True
 
-        il_cfg = self.config.OFFLINE.IQL
+        off_cfg = self.config.OFFLINE.IQL
         policy_cfg = self.config.POLICY
         if torch.cuda.is_available():
             self.device = torch.device("cuda", self.config.TORCH_GPU_ID)
@@ -176,7 +176,7 @@ class OffEnvDDTrainer(PPOTrainer):
         if rank0_only() and not os.path.isdir(self.config.CHECKPOINT_FOLDER):
             os.makedirs(self.config.CHECKPOINT_FOLDER)
 
-        self._setup_actor_critic_agent(il_cfg)
+        self._setup_actor_critic_agent(off_cfg)
         if self._is_distributed:
             self.agent.init_distributed(find_unused_params=True)  # type: ignore
 
