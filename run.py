@@ -32,6 +32,9 @@ def main():
         help="path to config yaml containing info about experiment",
     )
     parser.add_argument(
+        "--local_rank", type=int, default=-1, metavar="N", help="Local process rank."
+    )
+    parser.add_argument(
         "opts",
         default=None,
         nargs=argparse.REMAINDER,
@@ -75,7 +78,7 @@ def execute_exp(config: Config, run_type: str) -> None:
         trainer.eval()
 
 
-def run_exp(exp_config: str, run_type: str, opts=None) -> None:
+def run_exp(exp_config: str, run_type: str, local_rank: str, opts=None) -> None:
     r"""Runs experiment given mode and config
 
     Args:
@@ -88,8 +91,7 @@ def run_exp(exp_config: str, run_type: str, opts=None) -> None:
     """
 
     config = get_config(exp_config, opts)
-    print(opts)
-    if opts.local_rank == 0:
+    if local_rank == 0:
         wandb.init(project="offnav", name=f'{run_type}-{config.TENSORBOARD_DIR.split("/")[-1]}', sync_tensorboard=True,
                    config=config)
     execute_exp(config, run_type)

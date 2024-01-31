@@ -14,7 +14,6 @@ echo "In ObjectNav IL DDP"
 python -u -m torch.distributed.launch \
     --use_env \
     --nproc_per_node $NUM_GPUS \
-    --node_rank 0 \
     run.py \
     --exp-config $config \
     --run-type train \
