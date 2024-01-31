@@ -10,6 +10,10 @@
               <option name="name" value="CUDA_VISIBLE_DEVICES" />
               <option name="value" value="0,1,2,3" />
             </DockerEnvVarImpl>
+            <DockerEnvVarImpl>
+              <option name="name" value="WANDB_API_KEY" />
+              <option name="value" value="b31cebb778d0a11a2a205ea1681eab2977dca2bc" />
+            </DockerEnvVarImpl>
           </list>
         </option>
         <option name="commandLineOptions" value="--runtime=nvidia" />

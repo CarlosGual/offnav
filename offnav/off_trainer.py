@@ -861,8 +861,8 @@ class OffEnvDDTrainer(PPOTrainer):
         logger.info("Sampling actions deterministically...")
         self.actor_critic.eval()
         while (
-                len(stats_episodes) < number_of_eval_episodes
-                and self.envs.num_envs > 0
+                len(stats_episodes) < 2#number_of_eval_episodes
+                #and self.envs.num_envs > 0
         ):
             current_episodes = self.envs.current_episodes()
 
@@ -878,7 +878,7 @@ class OffEnvDDTrainer(PPOTrainer):
                     deterministic=True,
                 )
 
-                # prev_actions.copy_(actions)  # type: ignore
+                prev_actions.copy_(actions)  # type: ignore
             # NB: Move actions to CPU.  If CUDA tensors are
             # sent in to env.step(), that will create CUDA contexts
             # in the subprocesses.
@@ -974,6 +974,7 @@ class OffEnvDDTrainer(PPOTrainer):
                 test_recurrent_hidden_states,
                 not_done_masks,
                 current_episode_reward,
+                prev_actions,
                 batch,
                 rgb_frames,
             ) = self._pause_envs(
@@ -982,6 +983,7 @@ class OffEnvDDTrainer(PPOTrainer):
                 test_recurrent_hidden_states,
                 not_done_masks,
                 current_episode_reward,
+                prev_actions,
                 batch,
                 rgb_frames,
             )
@@ -1011,48 +1013,48 @@ class OffEnvDDTrainer(PPOTrainer):
 
         self.envs.close()
 
-    @staticmethod
-    def _pause_envs(
-            envs_to_pause: List[int],
-            envs: VectorEnv,
-            test_recurrent_hidden_states: Tensor,
-            not_done_masks: Tensor,
-            current_episode_reward: Tensor,
-            batch: Dict[str, Tensor],
-            rgb_frames: Union[List[List[Any]], List[List[ndarray]]],
-    ) -> Tuple[
-        VectorEnv,
-        Tensor,
-        Tensor,
-        Tensor,
-        Tensor,
-        Dict[str, Tensor],
-        List[List[Any]],
-    ]:
-        # pausing self.envs with no new episode
-        if len(envs_to_pause) > 0:
-            state_index = list(range(envs.num_envs))
-            for idx in reversed(envs_to_pause):
-                state_index.pop(idx)
-                envs.pause_at(idx)
-
-            # indexing along the batch dimensions
-            test_recurrent_hidden_states = test_recurrent_hidden_states[
-                state_index
-            ]
-            not_done_masks = not_done_masks[state_index]
-            current_episode_reward = current_episode_reward[state_index]
-
-            for k, v in batch.items():
-                batch[k] = v[state_index]
-
-            rgb_frames = [rgb_frames[i] for i in state_index]
-
-        return (
-            envs,
-            test_recurrent_hidden_states,
-            not_done_masks,
-            current_episode_reward,
-            batch,
-            rgb_frames,
-        )
+    # @staticmethod
+    # def _pause_envs(
+    #         envs_to_pause: List[int],
+    #         envs: VectorEnv,
+    #         test_recurrent_hidden_states: Tensor,
+    #         not_done_masks: Tensor,
+    #         current_episode_reward: Tensor,
+    #         batch: Dict[str, Tensor],
+    #         rgb_frames: Union[List[List[Any]], List[List[ndarray]]],
+    # ) -> Tuple[
+    #     VectorEnv,
+    #     Tensor,
+    #     Tensor,
+    #     Tensor,
+    #     Tensor,
+    #     Dict[str, Tensor],
+    #     List[List[Any]],
+    # ]:
+    #     # pausing self.envs with no new episode
+    #     if len(envs_to_pause) > 0:
+    #         state_index = list(range(envs.num_envs))
+    #         for idx in reversed(envs_to_pause):
+    #             state_index.pop(idx)
+    #             envs.pause_at(idx)
+    #
+    #         # indexing along the batch dimensions
+    #         test_recurrent_hidden_states = test_recurrent_hidden_states[
+    #             state_index
+    #         ]
+    #         not_done_masks = not_done_masks[state_index]
+    #         current_episode_reward = current_episode_reward[state_index]
+    #
+    #         for k, v in batch.items():
+    #             batch[k] = v[state_index]
+    #
+    #         rgb_frames = [rgb_frames[i] for i in state_index]
+    #
+    #     return (
+    #         envs,
+    #         test_recurrent_hidden_states,
+    #         not_done_masks,
+    #         current_episode_reward,
+    #         batch,
+    #         rgb_frames,
+    #     )

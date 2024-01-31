@@ -3,7 +3,7 @@ import argparse
 import os
 import random
 from datetime import datetime
-
+import wandb
 import numpy as np
 import numba
 import quaternion
@@ -50,9 +50,9 @@ def execute_exp(config: Config, run_type: str) -> None:
     """
     # set a random seed (from detectron2)
     seed = (
-        os.getpid()
-        + int(datetime.now().strftime("%S%f"))
-        + int.from_bytes(os.urandom(2), "big")
+            os.getpid()
+            + int(datetime.now().strftime("%S%f"))
+            + int.from_bytes(os.urandom(2), "big")
     )
     logger.info("Using a generated random seed {}".format(seed))
     config.defrost()
@@ -86,7 +86,10 @@ def run_exp(exp_config: str, run_type: str, opts=None) -> None:
     Returns:
         None.
     """
+
     config = get_config(exp_config, opts)
+    wandb.init(project="offnav", name=f'{run_type}-{config.TENSORBOARD_DIR.split("/")[-1]}', sync_tensorboard=True,
+               config=config)
     execute_exp(config, run_type)
 
 
