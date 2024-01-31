@@ -75,7 +75,7 @@ def execute_exp(config: Config, run_type: str) -> None:
         trainer.eval()
 
 
-def run_exp(exp_config: str, run_type: str, local_rank: str, opts=None) -> None:
+def run_exp(exp_config: str, run_type: str, opts=None) -> None:
     r"""Runs experiment given mode and config
 
     Args:
