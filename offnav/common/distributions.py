@@ -1,5 +1,5 @@
 """
-Add custom distributions in addition to th existing ones
+Add custom distributions in addition to the existing ones
 """
 import torch
 from torch.distributions import Categorical, OneHotCategorical, kl_divergence

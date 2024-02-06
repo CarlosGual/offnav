@@ -7,9 +7,9 @@ VIDEO_OPTION: []
 TENSORBOARD_DIR: "tb"
 VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
-EVAL_CKPT_PATH_DIR: "data/new_checkpoints"
+EVAL_CKPT_PATH_DIR: "data/new_checkpoints_dgx_lowerlr_3e-5"
 NUM_ENVIRONMENTS: 2
-CHECKPOINT_FOLDER: "data/new_checkpoints"
+CHECKPOINT_FOLDER: "data/new_checkpoints_dgx_lowerlr_3e-5"
 TRAINER_NAME: "offnav"
 SENSORS: ["RGB_SENSOR"]
 NUM_UPDATES: 1000

@@ -501,6 +501,7 @@ class IQLRNNAgent(nn.Module):
             terminals = torch.logical_not(batch["masks"]).float()
             rnn_hidden_states = batch["recurrent_hidden_states"]
             prev_actions = batch["prev_actions"]
+            inflections_batch = batch["observations"]["inflection_weight"]
 
             # Put all predictions together
             q1_pred, rnn_hidden_q1 = self.actor_critic.qf1(obs, rnn_hidden_states['qf1'], actions, prev_actions, masks)
@@ -531,7 +532,8 @@ class IQLRNNAgent(nn.Module):
             """
             Policy Loss
             """
-            policy_logpp = dist.log_prob(actions)
+            policy_logpp = dist.log_prob(actions.squeeze())
+            policy_loss_term = (inflections_batch * policy_logpp).sum(0) / inflections_batch.sum(0)
             sampled_actions = dist.sample().detach().cpu().numpy()
             deterministic_actions = dist.mode().detach().cpu().numpy()
             dataset_actions = actions.detach().cpu().numpy()
@@ -541,7 +543,7 @@ class IQLRNNAgent(nn.Module):
                 exp_adv = torch.clamp(exp_adv, max=self.clip_score)
 
             weights = exp_adv[:, 0].detach()
-            policy_loss = (-policy_logpp * weights).mean()
+            policy_loss = (-policy_loss_term * weights).mean()
 
             """
             Update networks

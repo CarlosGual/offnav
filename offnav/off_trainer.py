@@ -95,6 +95,7 @@ class OffEnvDDTrainer(PPOTrainer):
             q_update_period=off_cfg.q_update_period,
             target_update_period=off_cfg.target_update_period,
             eps=off_cfg.eps,
+            beta=off_cfg.beta,
         )
 
     def _init_train(self):
@@ -799,7 +800,7 @@ class OffEnvDDTrainer(PPOTrainer):
                 action_shape = (1,)
                 discrete_actions = True
 
-        off_cfg = config.IL.BehaviorCloning
+        off_cfg = config.OFFLINE.IQL
         policy_cfg = config.POLICY
         self._setup_actor_critic_agent(off_cfg)
 

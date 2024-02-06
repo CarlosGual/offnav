@@ -169,6 +169,7 @@ _CONFIG.OFFLINE.IQL.qf_lr = 3e-4
 _CONFIG.OFFLINE.IQL.policy_update_period = 1
 _CONFIG.OFFLINE.IQL.q_update_period = 1
 _CONFIG.OFFLINE.IQL.target_update_period = 1
+_CONFIG.OFFLINE.IQL.beta = 1.0/3
 
 ##############################################
 # Policy config
