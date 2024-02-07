@@ -3,14 +3,14 @@ CMD_TRAILING_OPTS: ["TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.MAX_SCENE_REPEAT_S
 ENV_NAME: "NavRLEnv"
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
-VIDEO_OPTION: [disk] # [disk, tensorboard]
-TENSORBOARD_DIR: "tb/with_inflection_weight"
+VIDEO_OPTION: [] # [disk, tensorboard]
+TENSORBOARD_DIR: "tb/with_inflection_weight_full_dataset"
 WANDB_ENABLED: False
 VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
-EVAL_CKPT_PATH_DIR: "data/new_checkpoints_dgx_lowerlr_3e-5"
+EVAL_CKPT_PATH_DIR: "data/with_inflection_weight_full_dataset"
 NUM_ENVIRONMENTS: 2
-CHECKPOINT_FOLDER: "data/with_inflection_weight"
+CHECKPOINT_FOLDER: "data/with_inflection_weight_full_dataset"
 TRAINER_NAME: "offnav"
 SENSORS: ["RGB_SENSOR"]
 NUM_UPDATES: 100
@@ -21,7 +21,7 @@ NUM_CHECKPOINTS: 1000
 FORCE_TORCH_SINGLE_THREADED: True
 
 EVAL:
-  SPLIT: "val_mini"
+  SPLIT: "train"
   USE_CKPT_CONFIG: False
 
 IL:

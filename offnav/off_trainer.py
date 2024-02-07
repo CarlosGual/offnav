@@ -550,6 +550,7 @@ class OffEnvDDTrainer(PPOTrainer):
                 if rank0_only()
                 else contextlib.suppress()
         ) as writer:
+
             while not self.is_done():
                 profiling_wrapper.on_start_step()
                 profiling_wrapper.range_push("train update")
@@ -864,8 +865,8 @@ class OffEnvDDTrainer(PPOTrainer):
         logger.info("Sampling actions deterministically...")
         self.actor_critic.eval()
         while (
-                len(stats_episodes) < 2#number_of_eval_episodes
-                #and self.envs.num_envs > 0
+                len(stats_episodes) < number_of_eval_episodes
+                and self.envs.num_envs > 0
         ):
             current_episodes = self.envs.current_episodes()
 
