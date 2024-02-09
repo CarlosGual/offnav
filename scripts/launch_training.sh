@@ -19,9 +19,8 @@ python -u -m torch.distributed.launch \
     --run-type train \
     TENSORBOARD_DIR $TENSORBOARD_DIR \
     CHECKPOINT_FOLDER $CHECKPOINT_DIR \
-    NUM_UPDATES 500000 \
+    NUM_UPDATES 50000 \
     WANDB_ENABLED True \
     NUM_ENVIRONMENTS 4 \
-    WANDB_ENABLED True \
     RL.DDPPO.force_distributed True \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz" \

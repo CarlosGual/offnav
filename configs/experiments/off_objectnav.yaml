@@ -4,18 +4,18 @@ ENV_NAME: "NavRLEnv"
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
 VIDEO_OPTION: [] # [disk, tensorboard]
-TENSORBOARD_DIR: "tb/pruebita"
-WANDB_ENABLED: False
+TENSORBOARD_DIR: "tb/with_inflection_weight_full_dataset_full_val"
+WANDB_ENABLED: True
 VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
 EVAL_CKPT_PATH_DIR: "data/with_inflection_weight_full_dataset"
 NUM_ENVIRONMENTS: 2
-CHECKPOINT_FOLDER: "data/pruebita"
+CHECKPOINT_FOLDER: "data/with_inflection_weight_full_dataset"
 TRAINER_NAME: "offnav"
 SENSORS: ["RGB_SENSOR"]
 NUM_UPDATES: 10000
 LOG_INTERVAL: 10
-NUM_CHECKPOINTS: 1
+NUM_CHECKPOINTS: 100
 # Force PyTorch to be single threaded as
 # this improves performance considerably
 FORCE_TORCH_SINGLE_THREADED: True
