@@ -6,8 +6,8 @@ export HABITAT_SIM_LOG=quiet
 
 config="configs/experiments/off_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd"
-TENSORBOARD_DIR="tb/initialized_bc/with_inflection_weight_full_dataset"
-CHECKPOINT_DIR="data/with_inflection_weight_full_dataset"
+TENSORBOARD_DIR="tb/initialized_bc/good_full_dataset_lr_3e4"
+CHECKPOINT_DIR="data/good_full_dataset_lr_3e4"
 
 
 echo "In ObjectNav IL DDP"

@@ -96,6 +96,8 @@ class OffEnvDDTrainer(PPOTrainer):
             target_update_period=off_cfg.target_update_period,
             eps=off_cfg.eps,
             beta=off_cfg.beta,
+            q_weight_decay=off_cfg.wd,
+            policy_weight_decay=off_cfg.wd,
         )
 
     def _init_train(self):
