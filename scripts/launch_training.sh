@@ -6,8 +6,8 @@ export HABITAT_SIM_LOG=quiet
 
 config="configs/experiments/off_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd"
-TENSORBOARD_DIR="tb/initialized_bc/good_full_dataset_lr_3e4"
-CHECKPOINT_DIR="data/good_full_dataset_lr_3e4"
+TENSORBOARD_DIR="tb/initialized_bc/good_full_dataset_lr_3e6"
+CHECKPOINT_DIR="data/good_full_dataset_lr_3e6"
 
 
 echo "In ObjectNav IL DDP"
@@ -19,7 +19,7 @@ python -u -m torch.distributed.launch \
     --run-type train \
     TENSORBOARD_DIR $TENSORBOARD_DIR \
     CHECKPOINT_FOLDER $CHECKPOINT_DIR \
-    NUM_UPDATES 50000 \
+    NUM_UPDATES 100000 \
     WANDB_ENABLED True \
     NUM_ENVIRONMENTS 4 \
     RL.DDPPO.force_distributed True \
