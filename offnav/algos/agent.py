@@ -538,7 +538,8 @@ class IQLRNNAgent(nn.Module):
             deterministic_actions = dist.mode().detach().cpu().numpy()
             dataset_actions = actions.detach().cpu().numpy()
             adv = q_pred - vf_pred
-            exp_adv = torch.exp(adv / self.beta)
+            weighted_beta = (self.beta * inflections_batch).sum(0) / inflections_batch.sum(0)
+            exp_adv = torch.exp(adv * weighted_beta)
             if self.clip_score is not None:
                 exp_adv = torch.clamp(exp_adv, max=self.clip_score)
             weights = exp_adv[:, 0].detach()
