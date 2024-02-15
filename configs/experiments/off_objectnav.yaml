@@ -4,13 +4,13 @@ ENV_NAME: "NavRLEnv"
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
 VIDEO_OPTION: [] # [disk, tensorboard]
-TENSORBOARD_DIR: "tb/good_full_dataset_lr_3e6_full_val"
+TENSORBOARD_DIR: "tb/good_full_dataset_lr_3e7_full_val"
 WANDB_ENABLED: True
 VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
-EVAL_CKPT_PATH_DIR: "data/good_full_dataset_lr_3e6"
+EVAL_CKPT_PATH_DIR: "data/good_full_dataset_lr_3e7"
 NUM_ENVIRONMENTS: 4
-CHECKPOINT_FOLDER: "data/good_full_dataset_lr_3e6"
+CHECKPOINT_FOLDER: "data/good_full_dataset_lr_3e7"
 TRAINER_NAME: "offnav"
 SENSORS: ["RGB_SENSOR"]
 NUM_UPDATES: 10000
@@ -37,15 +37,17 @@ RL:
 
 OFFLINE:
   IQL:
-    policy_lr: 3e-7
-    qf_lr: 3e-7
+    policy_lr: 3e-6
+    qf_lr: 3e-6
     policy_update_period: 1
     q_update_period: 1
     target_update_period: 1
     num_mini_batch: 2
     beta: 10
-    wd: 0.0
+    wd: 0.01
 
 POLICY:
   CRITIC:
     no_critic: True
+  RGB_ENCODER:
+    backbone: resnet50
