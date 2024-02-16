@@ -542,7 +542,7 @@ class IQLRNNAgent(nn.Module):
             exp_adv = torch.exp(weighted_adv * self.beta)
             if self.clip_score is not None:
                 exp_adv = torch.clamp(exp_adv, max=self.clip_score)
-            weights = exp_adv[:, 0].detach()
+            weights = exp_adv.detach()
             policy_loss = (-policy_loss_term * weights).mean()
 
             """
