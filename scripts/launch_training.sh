@@ -1,13 +1,13 @@
 #!/bin/bash
-export NUM_GPUS=1
+export NUM_GPUS=2
 export GLOG_minloglevel=2
 export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
 
 config="configs/experiments/off_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd"
-TENSORBOARD_DIR="tb/initialized_bc/beta_10_with_weighting_and_wd_lr_3e6"
-CHECKPOINT_DIR="data/beta_10_with_weighting_adn_wd_lr_3e6"
+TENSORBOARD_DIR="tb/initialized_bc/beta_3_with_weighting_and_wd_lr_3e6"
+CHECKPOINT_DIR="data/beta_3_with_weighting_adn_wd_lr_3e6"
 
 
 echo "In ObjectNav IL DDP"
