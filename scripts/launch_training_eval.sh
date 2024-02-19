@@ -5,7 +5,7 @@ export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
 
 config="configs/experiments/off_objectnav.yaml"
-DATA_PATH="data/datasets/objectnav/hm3d/v1"
+DATA_PATH="data/datasets/objectnav/objectnav_hm3d_v1"
 TENSORBOARD_DIR="tb/beta_3_with_weighting_and_wd_lr_3e6"
 CHECKPOINT_DIR="data/beta_3_with_weighting_and_wd_lr_3e6"
 
