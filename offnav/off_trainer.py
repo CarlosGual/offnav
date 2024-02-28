@@ -540,16 +540,16 @@ class OffEnvDDTrainer(PPOTrainer):
         #         requeue_stats["window_episode_stats"]
         #     )
 
-        logger.info('Loading pretrained checkpoint')
-        prev_checkpoint = load_pretrained_checkpoint('data/objectnav_il_hd.ckpt')
-        # Get the submodule names from actor_critic
-        module_names = [named_children[0] for named_children in list(self.actor_critic.named_children())]
-        # Drop action distribution from module_names
-        module_names.remove("action_distribution")
-        logger.info(f'Adapting state dict to {module_names}')
-        new_state_dict = adapt_state_dict(prev_checkpoint['state_dict'], module_names)
-        logger.info(f'Loading adapted state dict into actor critic')
-        self.agent.load_state_dict(new_state_dict, strict=False)
+        # logger.info('Loading pretrained checkpoint')
+        # prev_checkpoint = load_pretrained_checkpoint('data/objectnav_il_hd.ckpt')
+        # # Get the submodule names from actor_critic
+        # module_names = [named_children[0] for named_children in list(self.actor_critic.named_children())]
+        # # Drop action distribution from module_names
+        # module_names.remove("action_distribution")
+        # logger.info(f'Adapting state dict to {module_names}')
+        # new_state_dict = adapt_state_dict(prev_checkpoint['state_dict'], module_names)
+        # logger.info(f'Loading adapted state dict into actor critic')
+        # self.agent.load_state_dict(new_state_dict, strict=False)
 
         ppo_cfg = self.config.RL.PPO
         off_cfg = self.config.IL.BehaviorCloning
