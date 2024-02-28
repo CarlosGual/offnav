@@ -54,6 +54,7 @@ from torch.optim.lr_scheduler import LambdaLR
 from offnav.algos.agent import DDPILAgent, OffIQLAgent, OffIQLRNNAgent
 from offnav.common.rollout_storage import RolloutStorage
 from offnav.utils.utils import load_pretrained_checkpoint, adapt_state_dict
+from torch.profiler import profile
 
 
 @baseline_registry.register_trainer(name="offnav")
@@ -502,7 +503,13 @@ class OffEnvDDTrainer(PPOTrainer):
         """
 
         self._init_train()
-
+        prof = profile(
+            schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
+            on_trace_ready=torch.profiler.tensorboard_trace_handler('./profiler/test_benchmark_false'),
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True)
+        prof.start()
         count_checkpoints = 0
         prev_time = 0
 
@@ -554,6 +561,7 @@ class OffEnvDDTrainer(PPOTrainer):
         ) as writer:
 
             while not self.is_done():
+                prof.step()
                 profiling_wrapper.on_start_step()
                 profiling_wrapper.range_push("train update")
 
@@ -658,7 +666,7 @@ class OffEnvDDTrainer(PPOTrainer):
                     count_checkpoints += 1
 
                 profiling_wrapper.range_pop()  # train update
-
+            prof.stop()
             self.envs.close()
 
     @rank0_only
