@@ -50,4 +50,4 @@ POLICY:
   CRITIC:
     no_critic: True
   RGB_ENCODER:
-    backbone: resnet50
+    backbone: resnet18
