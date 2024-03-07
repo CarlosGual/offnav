@@ -4,18 +4,18 @@ ENV_NAME: "NavRLEnv"
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
 VIDEO_OPTION: [] # [disk, tensorboard]
-TENSORBOARD_DIR: "tb/beta_3_with_weighting_and_lr_3e6_minimal"
+TENSORBOARD_DIR: "tb/from_scratch_beta_3_with_weighting_and_lr_3e6_minimal"
 WANDB_ENABLED: True
 VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
-EVAL_CKPT_PATH_DIR: "data/beta_3_with_weighting_and_lr_3e6_minimal"
+EVAL_CKPT_PATH_DIR: "data/from_scratch_beta_3_with_weighting_and_lr_3e6_minimal"
 NUM_ENVIRONMENTS: 8
-CHECKPOINT_FOLDER: "data/beta_3_with_weighting_and_lr_3e6_minimal"
+CHECKPOINT_FOLDER: "data/from_scratch_beta_3_with_weighting_and_lr_3e6_minimal"
 TRAINER_NAME: "offnav"
 SENSORS: ["RGB_SENSOR"]
 NUM_UPDATES: 500
 LOG_INTERVAL: 10
-NUM_CHECKPOINTS: 10
+NUM_CHECKPOINTS: 50
 # Force PyTorch to be single threaded as
 # this improves performance considerably
 FORCE_TORCH_SINGLE_THREADED: True
@@ -42,7 +42,7 @@ OFFLINE:
     policy_update_period: 1
     q_update_period: 1
     target_update_period: 1
-    num_mini_batch: 1
+    num_mini_batch: 2
     beta: 3.0
     wd: 0.0
 
