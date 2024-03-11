@@ -18,5 +18,5 @@ python -u -m run \
     NUM_UPDATES 50000 \
     NUM_ENVIRONMENTS 8 \
     RL.DDPPO.force_distributed True \
-    EVAL.SPLIT "mini_val" \
+    EVAL.SPLIT "val_mini" \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz" \
