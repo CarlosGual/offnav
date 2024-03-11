@@ -519,26 +519,27 @@ class OffEnvDDTrainer(PPOTrainer):
         )
 
         resume_state = load_resume_state(self.config)
-        # if resume_state is not None:
-        #     self.agent.load_state_dict(resume_state["state_dict"])
-        #     self.agent.policy_optimizer.load_state_dict(resume_state["optim_state"])
-        #     lr_scheduler.load_state_dict(resume_state["lr_sched_state"])
-        #
-        #     requeue_stats = resume_state["requeue_stats"]
-        #     self.env_time = requeue_stats["env_time"]
-        #     self.pth_time = requeue_stats["pth_time"]
-        #     self.num_steps_done = requeue_stats["num_steps_done"]
-        #     self.num_updates_done = requeue_stats["num_updates_done"]
-        #     self._last_checkpoint_percent = requeue_stats[
-        #         "_last_checkpoint_percent"
-        #     ]
-        #     count_checkpoints = requeue_stats["count_checkpoints"]
-        #     prev_time = requeue_stats["prev_time"]
-        #
-        #     self.running_episode_stats = requeue_stats["running_episode_stats"]
-        #     self.window_episode_stats.update(
-        #         requeue_stats["window_episode_stats"]
-        #     )
+        if resume_state is not None:
+            logger.info('Resuming state...')
+            self.agent.load_state_dict(resume_state["state_dict"])
+            self.agent.policy_optimizer.load_state_dict(resume_state["optim_state"])
+            lr_scheduler.load_state_dict(resume_state["lr_sched_state"])
+
+            requeue_stats = resume_state["requeue_stats"]
+            self.env_time = requeue_stats["env_time"]
+            self.pth_time = requeue_stats["pth_time"]
+            self.num_steps_done = requeue_stats["num_steps_done"]
+            self.num_updates_done = requeue_stats["num_updates_done"]
+            self._last_checkpoint_percent = requeue_stats[
+                "_last_checkpoint_percent"
+            ]
+            count_checkpoints = requeue_stats["count_checkpoints"]
+            prev_time = requeue_stats["prev_time"]
+
+            self.running_episode_stats = requeue_stats["running_episode_stats"]
+            self.window_episode_stats.update(
+                requeue_stats["window_episode_stats"]
+            )
 
         # logger.info('Loading pretrained checkpoint')
         # prev_checkpoint = load_pretrained_checkpoint('data/objectnav_il_hd.ckpt')

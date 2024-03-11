@@ -2,13 +2,13 @@
   <configuration default="false" name="docker/Dockerfile" type="docker-deploy" factoryName="dockerfile" server-name="Docker DGX">
     <deployment type="dockerfile">
       <settings>
-        <option name="imageTag" value="offnav_eval" />
-        <option name="containerName" value="offnav_eval" />
+        <option name="imageTag" value="offnav" />
+        <option name="containerName" value="offnav" />
         <option name="envVars">
           <list>
             <DockerEnvVarImpl>
               <option name="name" value="CUDA_VISIBLE_DEVICES" />
-              <option name="value" value="2" />
+              <option name="value" value="0,1,2,3" />
             </DockerEnvVarImpl>
             <DockerEnvVarImpl>
               <option name="name" value="WANDB_API_KEY" />
