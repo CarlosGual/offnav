@@ -10,7 +10,7 @@ TENSORBOARD_DIR="tb/from_scratch_full_dataset_3e4_wd"
 CHECKPOINT_DIR="data/from_scratch_full_dataset_3e4_wd"
 
 
-echo "In ObjectNav IL DDP"
+echo "In ObjectNav OFFNAV"
 python -u -m torch.distributed.launch \
     --use_env \
     --nproc_per_node $NUM_GPUS \
