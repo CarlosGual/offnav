@@ -228,13 +228,13 @@ class OffEnvDDTrainer(PPOTrainer):
         batch = apply_obs_transforms_batch(batch, self.obs_transforms)  # type: ignore
 
         prf_cfg = self.config.PROFILING
-        if prf_cfg.enabled:
-            self._profiler = profile(
-                schedule=torch.profiler.schedule(wait=prf_cfg.wait, warmup=prf.warmup, active=prf.active, repeat=prf.repeat),
-                on_trace_ready=torch.profiler.tensorboard_trace_handler(f'./profiler/{self.config.TENSORBOARD_DIR}'),
-                record_shapes=True,
-                profile_memory=True,
-                with_stack=True)
+        # if prf_cfg.enabled:
+        #     self._profiler = profile(
+        #         schedule=torch.profiler.schedule(wait=prf_cfg.wait, warmup=prf.warmup, active=prf.active, repeat=prf.repeat),
+        #         on_trace_ready=torch.profiler.tensorboard_trace_handler(f'./profiler/{self.config.TENSORBOARD_DIR}'),
+        #         record_shapes=True,
+        #         profile_memory=True,
+        #         with_stack=True)
 
         if self._static_encoder:
             with torch.no_grad():
