@@ -237,6 +237,17 @@ _CONFIG.RL.Finetune.start_actor_update_at = 100
 _CONFIG.RL.Finetune.start_critic_warmup_at = 20
 _CONFIG.RL.Finetune.start_critic_update_at = 80
 
+##############################################
+# Profiler config
+##############################################
+
+_CONFIG.PROFILER = CN()
+_CONFIG.PROFILER.enabled = False
+_CONFIG.PROFILER.wait = 1
+_CONFIG.PROFILER.warmup = 1
+_CONFIG.PROFILER.active = 3
+_CONFIG.PROFILER.repeat = 1
+
 def get_config(
     config_paths: Optional[Union[List[str], str]] = None,
     opts: Optional[list] = None,

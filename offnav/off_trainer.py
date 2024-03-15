@@ -60,6 +60,7 @@ from torch.profiler import profile
 @baseline_registry.register_trainer(name="offnav")
 class OffEnvDDTrainer(PPOTrainer):
     def __init__(self, config=None):
+        self._profiler = None
         super().__init__(config)
 
     def _setup_actor_critic_agent(self, off_cfg: Config) -> None:
@@ -225,6 +226,15 @@ class OffEnvDDTrainer(PPOTrainer):
             observations, device=self.device, cache=self._obs_batching_cache
         )
         batch = apply_obs_transforms_batch(batch, self.obs_transforms)  # type: ignore
+
+        prf_cfg = self.config.PROFILING
+        if prf_cfg.enabled:
+            self._profiler = profile(
+                schedule=torch.profiler.schedule(wait=prf_cfg.wait, warmup=prf.warmup, active=prf.active, repeat=prf.repeat),
+                on_trace_ready=torch.profiler.tensorboard_trace_handler(f'./profiler/{self.config.TENSORBOARD_DIR}'),
+                record_shapes=True,
+                profile_memory=True,
+                with_stack=True)
 
         if self._static_encoder:
             with torch.no_grad():
@@ -503,13 +513,8 @@ class OffEnvDDTrainer(PPOTrainer):
         """
 
         self._init_train()
-        prof = profile(
-            schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
-            on_trace_ready=torch.profiler.tensorboard_trace_handler('./profiler/test_benchmark_false'),
-            record_shapes=True,
-            profile_memory=True,
-            with_stack=True)
-        prof.start()
+        if self._profiler is not None:
+            self._profiler.start()
         count_checkpoints = 0
         prev_time = 0
 
@@ -562,7 +567,8 @@ class OffEnvDDTrainer(PPOTrainer):
         ) as writer:
 
             while not self.is_done():
-                prof.step()
+                if self._profiler is not None:
+                    self._profiler.step()
                 profiling_wrapper.on_start_step()
                 profiling_wrapper.range_push("train update")
 

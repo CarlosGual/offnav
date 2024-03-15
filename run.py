@@ -104,7 +104,7 @@ def run_exp(exp_config: str, run_type: str, opts=None) -> None:
         local_rank = int(os.getenv("LOCAL_RANK", 0))
         if local_rank == 0:
             wandb.init(project="offnav", name=f'{run_type}-{config.TENSORBOARD_DIR.split("/")[-1]}', sync_tensorboard=True,
-                       config=config, tags=[f'{run_type}', f'{socket.gethostname()}', f'{get_active_branch_name()}'])
+                       config=config, tags=[f'{run_type}', f'{get_active_branch_name()}'])
     execute_exp(config, run_type)
 
 
