@@ -44,7 +44,7 @@ OFFLINE:
     target_update_period: 1
     num_mini_batch: 2
     beta: 3.0
-    wd: 0.001
+    wd: 0.0
 
 POLICY:
   CRITIC:
