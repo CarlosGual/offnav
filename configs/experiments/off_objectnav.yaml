@@ -5,7 +5,7 @@ SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
 VIDEO_OPTION: [] # [disk, tensorboard]
 TENSORBOARD_DIR: "tb/from_scratch_beta_3_with_weighting_and_lr_3e6_minimal"
-WANDB_ENABLED: True
+WANDB_ENABLED: False
 VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
 EVAL_CKPT_PATH_DIR: "data/from_scratch_beta_3_with_weighting_and_lr_3e6_minimal"
