@@ -1,5 +1,5 @@
 #!/bin/bash
-export NUM_GPUS=3
+export NUM_GPUS=2
 export GLOG_minloglevel=2
 export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
@@ -7,7 +7,7 @@ export HABITAT_SIM_LOG=quiet
 config="configs/experiments/off_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd"
 TENSORBOARD_DIR="tb/fsfd_3e4_wd"
-CHECKPOINT_DIR="data/fsfd_3e4_wd"
+CHECKPOINT_DIR="data/checkpoints/offnav/fsfd_3e4_wd"
 
 
 echo "In ObjectNav OFFNAV"
