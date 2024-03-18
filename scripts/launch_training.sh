@@ -6,8 +6,8 @@ export HABITAT_SIM_LOG=quiet
 
 config="configs/experiments/off_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd"
-TENSORBOARD_DIR="tb/fsfd_1e3_wd00_adam"
-CHECKPOINT_DIR="data/fsfd_1e3_wd00_adam"
+TENSORBOARD_DIR="tb/from_scratch_full_dataset_3e4_wd"
+CHECKPOINT_DIR="data/from_scratch_full_dataset_3e4_wd"
 
 
 echo "In ObjectNav OFFNAV"
