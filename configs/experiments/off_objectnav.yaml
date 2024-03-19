@@ -1,6 +1,6 @@
 BASE_TASK_CONFIG_PATH: "configs/tasks/objectnav_hm3d.yaml"
 CMD_TRAILING_OPTS: ["TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.MAX_SCENE_REPEAT_STEPS", "50000"]
-ENV_NAME: "NavRLEnv"
+ENV_NAME: "SimpleRLEnv"
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
 VIDEO_OPTION: [] # [disk, tensorboard]
@@ -37,8 +37,8 @@ RL:
 
 OFFLINE:
   IQL:
-    policy_lr: 3e-4
-    encoder_lr: 3e-4
+    policy_lr: 3e-5
+    encoder_lr: 3e-5
     qf_lr: 3e-4
     policy_update_period: 1
     q_update_period: 1
