@@ -4,13 +4,13 @@ ENV_NAME: "NavRLEnv"
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
 VIDEO_OPTION: [] # [disk, tensorboard]
-TENSORBOARD_DIR: "tb/from_scratch_beta_3_with_weighting_and_lr_3e6_minimal"
-WANDB_ENABLED: True
+TENSORBOARD_DIR: "tb/prueba_shared_encoder"
+WANDB_ENABLED: False
 VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
-EVAL_CKPT_PATH_DIR: "data/from_scratch_beta_3_with_weighting_and_lr_3e6_minimal"
-NUM_ENVIRONMENTS: 8
-CHECKPOINT_FOLDER: "data/from_scratch_beta_3_with_weighting_and_lr_3e6_minimal"
+EVAL_CKPT_PATH_DIR: "data/prueba_shared_encoder"
+NUM_ENVIRONMENTS: 2
+CHECKPOINT_FOLDER: "data/prueba_shared_encoder"
 TRAINER_NAME: "offnav"
 SENSORS: ["RGB_SENSOR"]
 NUM_UPDATES: 500
@@ -26,7 +26,7 @@ EVAL:
 
 IL:
   POLICY:
-    name: "ObjectNavIQLRNNPolicy"
+    name: "ObjectNavSharedPolicy"
 
 RL:
   SUCCESS_REWARD: 2.5
@@ -51,4 +51,5 @@ POLICY:
   CRITIC:
     no_critic: True
   RGB_ENCODER:
-    backbone: resnet18
+    backbone: resnet50
+    pretrained_encoder: "data/visual_encoders/omnidata_DINO_02.pth"
