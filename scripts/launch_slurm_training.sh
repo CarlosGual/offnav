@@ -3,7 +3,7 @@
 #SBATCH -N 1
 #SBATCH -J test_shared_heads
 #SBATCH --output=slurm_logs/ddoff-train-%j.out
-#SBATCH --error=slurm_logs/dsoff-train-%j.err
+#SBATCH --error=slurm_logs/ddoff-train-%j.err
 #SBATCH --ntasks-per-node 2
 
 source ~/miniconda3/etc/profile.d/conda.sh
@@ -22,10 +22,11 @@ CHECKPOINT_DIR="data/checkpoints/offnav/${exp_name}"
 
 mkdir -p $TENSORBOARD_DIR
 mkdir -p $CHECKPOINT_DIR
+mkdir -p slurm_logs
 set -x
 
 echo "In ObjectNav OFFNAV"
-akrun python -u -m run \
+srun python -u -m run \
     --use_env \
     --nproc_per_node $NUM_GPUS \
     run.py \
