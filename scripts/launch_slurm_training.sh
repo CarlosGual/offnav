@@ -25,7 +25,7 @@ mkdir -p $CHECKPOINT_DIR
 set -x
 
 echo "In ObjectNav OFFNAV"
-srun python -u -m run \
+akrun python -u -m run \
     --use_env \
     --nproc_per_node $NUM_GPUS \
     run.py \
