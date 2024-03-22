@@ -9,7 +9,7 @@ WANDB_ENABLED: False
 VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
 EVAL_CKPT_PATH_DIR: "data/prueba_shared_encoder"
-NUM_ENVIRONMENTS: 2
+NUM_ENVIRONMENTS: 8
 CHECKPOINT_FOLDER: "data/prueba_shared_encoder"
 TRAINER_NAME: "offnav"
 SENSORS: ["RGB_SENSOR"]

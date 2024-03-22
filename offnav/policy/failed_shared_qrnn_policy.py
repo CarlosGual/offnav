@@ -73,7 +73,7 @@ class RGBEncoder(Net):
 
     @property
     def output_size(self):
-        return self.visual_encoder.output_size
+        return self.rnn_input_size
 
     @property
     def is_blind(self):
@@ -81,7 +81,7 @@ class RGBEncoder(Net):
 
     @property
     def num_recurrent_layers(self):
-        return NotImplementedError
+        return None
 
     def forward(self, observations, rnn_hidden_states):
         r"""
@@ -106,7 +106,7 @@ class RGBEncoder(Net):
         return rgb
 
 
-class PolicyNet(Net):
+class SharedPolicyNet(Net):
     r"""A baseline sequence to sequence network that concatenates instruction,
     RGB, and depth encodings before decoding an action distribution with an RNN.
     Modules:
@@ -121,28 +121,30 @@ class PolicyNet(Net):
             observation_space: Space,
             policy_config: Config,
             num_actions: int,
+            run_type: str,
             use_actions: bool,
             hidden_size: int,
             rnn_type: str,
             num_recurrent_layers: int,
-            visual_encoder_output_size,
             is_policy: bool = False,
-
     ):
         super().__init__()
         self.policy_config = policy_config
         self.use_actions = use_actions
         self.is_policy = is_policy
-
-        logger.info("******************** Loading module: {} ********************".format(self.__class__.__name__))
-
+        self.shared_encoder = RGBEncoder(
+            policy_config=policy_config,
+            run_type=run_type
+        )
         rnn_input_size = 0
+        logger.info("******************** Loading module: {} ********************".format('e'))
+
         rnn_input_size += policy_config.RGB_ENCODER.hidden_size
 
         self.visual_fc = nn.Sequential(
             nn.Flatten(),
             nn.Linear(
-                visual_encoder_output_size,
+                self.shared_encoder.visual_encoder.output_size,
                 policy_config.RGB_ENCODER.hidden_size,
             ),
             nn.ReLU(True),
@@ -224,9 +226,11 @@ class PolicyNet(Net):
     def num_recurrent_layers(self):
         return self.state_encoder.num_recurrent_layers
 
-    def forward(self, observations, rgb, rnn_hidden_states, actions, prev_actions, masks):
+    def forward(self, observations, rnn_hidden_states, actions, prev_actions, masks):
 
         x = []
+        # Maybe try to pass it as an argument to forward function, but should be okey
+        rgb = self.shared_encoder(observations, rnn_hidden_states)
         rgb = self.visual_fc(rgb)
         x.append(rgb)
 
@@ -283,60 +287,252 @@ class PolicyNet(Net):
         return x, rnn_hidden_states
 
 
-class QNet(PolicyNet):
+class SharedQNet(Net):
+    r"""A baseline sequence to sequence network that concatenates instruction,
+    RGB, and depth encodings before decoding an action distribution with an RNN.
+    Modules:
+        Instruction encoder
+        Depth encoder
+        RGB encoder
+        RNN state encoder
+    """
+
     def __init__(
             self,
             observation_space: Space,
             policy_config: Config,
             num_actions: int,
-            visual_encoder_output_size,
-            use_actions: bool = False,
-            hidden_size: int = 512,
-            rnn_type: str = "GRU",
-            num_recurrent_layers: int = 1,
+            shared_encoder,
+            use_actions: bool,
+            hidden_size: int,
+            rnn_type: str,
+            num_recurrent_layers: int,
+            is_policy: bool = False,
             mlp_critic=False,
             critic_hidden_dim=512,
     ):
-        super().__init__(
-            observation_space=observation_space,
-            policy_config=policy_config,
-            num_actions=num_actions,
-            use_actions=use_actions,
+        super().__init__()
+        self.policy_config = policy_config
+        self.use_actions = use_actions
+        self.is_policy = is_policy
+        self.shared_encoder = shared_encoder
+
+        rnn_input_size = 0
+        logger.info("******************************** Loading module: {} ********************************".format(
+            self.__class__.__name__))
+
+        rnn_input_size += policy_config.RGB_ENCODER.hidden_size
+
+        self.visual_fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(
+                self.shared_encoder.visual_encoder.output_size,
+                policy_config.RGB_ENCODER.hidden_size,
+            ),
+            nn.ReLU(True),
+        )
+
+        if EpisodicGPSSensor.cls_uuid in observation_space.spaces:
+            input_gps_dim = observation_space.spaces[
+                EpisodicGPSSensor.cls_uuid
+            ].shape[0]
+            self.gps_embedding = nn.Linear(input_gps_dim, 32)
+            rnn_input_size += 32
+            logger.info("\n\nSetting up GPS sensor")
+
+        if EpisodicCompassSensor.cls_uuid in observation_space.spaces:
+            assert (
+                    observation_space.spaces[EpisodicCompassSensor.cls_uuid].shape[
+                        0
+                    ]
+                    == 1
+            ), "Expected compass with 2D rotation."
+            input_compass_dim = 2  # cos and sin of the angle
+            self.compass_embedding_dim = 32
+            self.compass_embedding = nn.Linear(
+                input_compass_dim, self.compass_embedding_dim
+            )
+            rnn_input_size += 32
+            logger.info("\n\nSetting up Compass sensor")
+
+        if ObjectGoalSensor.cls_uuid in observation_space.spaces:
+            self._n_object_categories = (
+                    int(
+                        observation_space.spaces[ObjectGoalSensor.cls_uuid].high[0]
+                    )
+                    + 1
+            )
+            logger.info(
+                "Object categories: {}".format(self._n_object_categories)
+            )
+            self.obj_categories_embedding = nn.Embedding(
+                self._n_object_categories, 32
+            )
+            rnn_input_size += 32
+            logger.info("\n\nSetting up Object Goal sensor")
+
+        if policy_config.SEQ2SEQ.use_action and self.use_actions:
+            self.action_embedding = nn.Embedding(num_actions + 1, 32)
+            rnn_input_size += self.action_embedding.embedding_dim
+
+        if policy_config.SEQ2SEQ.use_action and self.is_policy:
+            self.prev_action_embedding = nn.Embedding(num_actions + 1, 32)
+            rnn_input_size += self.prev_action_embedding.embedding_dim
+
+        self._rnn_input_size = rnn_input_size
+
+        logger.info(
+            "State enc: {} - {} - {} - {}".format(
+                rnn_input_size, hidden_size, rnn_type, num_recurrent_layers
+            )
+        )
+
+        self.state_encoder = build_rnn_state_encoder(
+            rnn_input_size,
             hidden_size=hidden_size,
             rnn_type=rnn_type,
-            num_recurrent_layers=num_recurrent_layers,
-            visual_encoder_output_size=visual_encoder_output_size,
+            num_layers=num_recurrent_layers,
         )
+        self._hidden_size = hidden_size
         if not mlp_critic:
-            self.critic = CriticHead(self.output_size)
+            self.critic = CriticHead(self._hidden_size)
         else:
             self.critic = MLPCriticHead(
-                self.output_size,
+                self._hidden_size,
                 critic_hidden_dim,
             )
+        self.train()
 
-    def forward(self, observations, rgb, rnn_hidden_states, actions, prev_actions, masks):
-        r"""
-        instruction_embedding: [batch_size x INSTRUCTION_ENCODER.output_size]
-        depth_embedding: [batch_size x DEPTH_ENCODER.output_size]
-        rgb_embedding: [batch_size x RGB_ENCODER.output_size]
-        """
-        features, rnn_hidden_states = super().forward(observations, rgb, rnn_hidden_states, actions, prev_actions,
-                                                      masks)
-        value = self.critic(features)
+    @property
+    def output_size(self):
+        return self._hidden_size
+
+    @property
+    def is_blind(self):
+        return self.shared_encoder.visual_encoder.is_blind and self.shared_encoder.depth_encoder.is_blind
+
+    @property
+    def num_recurrent_layers(self):
+        return self.state_encoder.num_recurrent_layers
+
+    def forward(self, observations, rnn_hidden_states, actions, prev_actions, masks):
+
+        x = []
+        # Maybe try to pass it as an argument to forward function, but should be okey
+        rgb = self.shared_encoder(observations, rnn_hidden_states)
+        rgb = self.visual_fc(rgb)
+        x.append(rgb)
+
+        if EpisodicGPSSensor.cls_uuid in observations:
+            obs_gps = observations[EpisodicGPSSensor.cls_uuid]
+            if len(obs_gps.size()) == 3:
+                obs_gps = obs_gps.contiguous().view(-1, obs_gps.size(2))
+            x.append(self.gps_embedding(obs_gps))
+
+        if EpisodicCompassSensor.cls_uuid in observations:
+            obs_compass = observations["compass"]
+            if len(obs_compass.size()) == 3:
+                obs_compass = obs_compass.contiguous().view(
+                    -1, obs_compass.size(2)
+                )
+            compass_observations = torch.stack(
+                [
+                    torch.cos(obs_compass),
+                    torch.sin(obs_compass),
+                ],
+                -1,
+            )
+            compass_embedding = self.compass_embedding(
+                compass_observations.float().squeeze(dim=1)
+            )
+            x.append(compass_embedding)
+
+        if ObjectGoalSensor.cls_uuid in observations:
+            object_goal = observations[ObjectGoalSensor.cls_uuid].long()
+            if len(object_goal.size()) == 3:
+                object_goal = object_goal.contiguous().view(
+                    -1, object_goal.size(2)
+                )
+            x.append(self.obj_categories_embedding(object_goal).squeeze(dim=1))
+
+        if self.policy_config.SEQ2SEQ.use_action and self.use_actions:
+            actions_embedding = self.action_embedding(
+                ((actions.float() + 1) * masks).long().squeeze(dim=-1)
+            )
+            x.append(actions_embedding)
+
+        if self.policy_config.SEQ2SEQ.use_action and self.is_policy:
+            prev_actions_embedding = self.prev_action_embedding(
+                ((prev_actions.float() + 1) * masks).long().squeeze(dim=-1)
+            )
+            x.append(prev_actions_embedding)
+
+        x = torch.cat(x, dim=1)
+
+        x, rnn_hidden_states = self.state_encoder(
+            x, rnn_hidden_states.contiguous(), masks
+        )
+
+        value = self.critic(x)
         return value, rnn_hidden_states
 
 
-class VNet(Net):
+# class SharedQNet(SharedPolicyNet):
+#     def __init__(
+#             self,
+#             observation_space: Space,
+#             policy_config: Config,
+#             num_actions: int,
+#             run_type: str,
+#             shared_encoder,
+#             use_actions: bool = False,
+#             hidden_size: int = 512,
+#             rnn_type: str = "GRU",
+#             num_recurrent_layers: int = 1,
+#             mlp_critic=False,
+#             critic_hidden_dim=512,
+#     ):
+#         super().__init__(
+#             observation_space=observation_space,
+#             policy_config=policy_config,
+#             num_actions=num_actions,
+#             use_actions=use_actions,
+#             run_type=run_type,
+#             hidden_size=hidden_size,
+#             rnn_type=rnn_type,
+#             num_recurrent_layers=num_recurrent_layers,
+#         )
+#         self.shared_encoder = shared_encoder
+#         if not mlp_critic:
+#             self.critic = CriticHead(self.output_size)
+#         else:
+#             self.critic = MLPCriticHead(
+#                 self.output_size,
+#                 critic_hidden_dim,
+#             )
+#
+#     def forward(self, observations, rnn_hidden_states, actions, prev_actions, masks):
+#         r"""
+#         instruction_embedding: [batch_size x INSTRUCTION_ENCODER.output_size]
+#         depth_embedding: [batch_size x DEPTH_ENCODER.output_size]
+#         rgb_embedding: [batch_size x RGB_ENCODER.output_size]
+#         """
+#         features, rnn_hidden_states = super().forward(observations, rnn_hidden_states, actions, prev_actions, masks)
+#         value = self.critic(features)
+#         return value, rnn_hidden_states
+
+
+class SharedVNet(Net):
     def __init__(
             self,
             observation_space: Space,
             policy_config: Config,
-            visual_encoder_output_size,
+            shared_encoder,
             output_activation=nn.Identity
     ):
         super().__init__()
         self.policy_config = policy_config
+        self.shared_encoder = shared_encoder
         self._output_size = policy_config.QNET.output_size
         fc_input_size = 0
         logger.info("******************************** Loading module: {} ********************************".format(
@@ -349,7 +545,7 @@ class VNet(Net):
         self.visual_fc = nn.Sequential(
             nn.Flatten(),
             nn.Linear(
-                visual_encoder_output_size,
+                self.shared_encoder.visual_encoder.output_size,
                 policy_config.RGB_ENCODER.hidden_size,
             ),
             nn.ReLU(True),
@@ -426,13 +622,15 @@ class VNet(Net):
         """
         pass
 
-    def forward(self, observations, rgb, rnn_hidden_states):
+    def forward(self, observations, rnn_hidden_states):
         r"""
         instruction_embedding: [batch_size x INSTRUCTION_ENCODER.output_size]
         depth_embedding: [batch_size x DEPTH_ENCODER.output_size]
         rgb_embedding: [batch_size x RGB_ENCODER.output_size]
         """
         x = []
+        # Maybe try to pass it as an argument to forward function, but should be okey
+        rgb = self.shared_encoder(observations, rnn_hidden_states)
         rgb = self.visual_fc(rgb)
         x.append(rgb)
 
@@ -477,103 +675,8 @@ class VNet(Net):
         return x
 
 
-class SharedPolicyNet(Net):
-    def __init__(self,
-                 observation_space: Space,
-                 policy_config: Config,
-                 action_space: Space,
-                 run_type: str,
-                 hidden_size: int,
-                 rnn_type: str,
-                 num_recurrent_layers: int,
-                 ):
-        super().__init__()
-        self.shared_encoder = RGBEncoder(
-            policy_config=policy_config,
-            run_type=run_type
-        )
-        self.policy = PolicyNet(
-            observation_space=observation_space,
-            policy_config=policy_config,
-            num_actions=action_space.n,
-            use_actions=False,
-            hidden_size=hidden_size,
-            rnn_type=rnn_type,
-            num_recurrent_layers=num_recurrent_layers,
-            is_policy=True,
-            visual_encoder_output_size=self.shared_encoder.output_size,
-        )
-        self.qf1 = QNet(
-            observation_space=observation_space,
-            policy_config=policy_config,
-            num_actions=action_space.n,
-            use_actions=True,
-            hidden_size=hidden_size,
-            rnn_type=rnn_type,
-            num_recurrent_layers=num_recurrent_layers,
-            visual_encoder_output_size=self.shared_encoder.output_size,
-        )
-        self.target_qf1 = QNet(
-            observation_space=observation_space,
-            policy_config=policy_config,
-            num_actions=action_space.n,
-            use_actions=True,
-            hidden_size=hidden_size,
-            rnn_type=rnn_type,
-            num_recurrent_layers=num_recurrent_layers,
-            visual_encoder_output_size=self.shared_encoder.output_size,
-        )
-        self.vf = VNet(
-            observation_space=observation_space,
-            policy_config=policy_config,
-            visual_encoder_output_size=self.shared_encoder.output_size,
-        )
-
-    @property
-    def output_size(self):
-        return self.policy.output_size
-
-    @property
-    def is_blind(self):
-        return self.shared_encoder.visual_encoder.is_blind and self.shared_encoder.depth_encoder.is_blind
-
-    @property
-    def num_recurrent_layers(self):
-        """
-        This is because Net interface is fixed for use with RNNs
-        :return:
-        """
-        return self.policy.num_recurrent_layers
-
-    def forward(self, obs, next_obs, rnn_hidden_states, prev_actions, actions, masks):
-
-        rgb = self.shared_encoder(obs, rnn_hidden_states['policy'])
-        features, rnn_hidden_policy = self.policy(obs, rgb, rnn_hidden_states['policy'], actions,
-                                                       prev_actions, masks)
-        rgb_cloned = rgb.detach().clone()
-        q1_pred, rnn_hidden_q1 = self.qf1(obs, rgb_cloned, rnn_hidden_states['qf1'], actions, prev_actions, masks)
-        target_vf_pred = self.vf(next_obs, rgb_cloned, actions).detach()
-        tq1_pred, rnn_hidden_tq1 = self.target_qf1(obs, rgb_cloned, rnn_hidden_states['tqf1'], actions,
-                                                   prev_actions, masks)
-        q_pred = tq1_pred.detach()
-        vf_pred = self.vf(obs, rgb_cloned, actions)
-
-        forward_values = {
-            "features": features,
-            "q1_pred": q1_pred,
-            "target_vf_pred": target_vf_pred,
-            "q_pred": q_pred,
-            "vf_pred": vf_pred,
-            "rnn_hidden_policy": rnn_hidden_policy,
-            "rnn_hidden_tq1": rnn_hidden_tq1,
-            "rnn_hidden_q1": rnn_hidden_q1,
-        }
-
-        return forward_values
-
-
 @baseline_registry.register_policy
-class ObjectNavSharedPolicy(IQLRNNPolicy):
+class ObjectNavFailedSharedPolicy(IQLRNNPolicy):
     def __init__(
             self,
             observation_space: Space,
@@ -589,13 +692,40 @@ class ObjectNavSharedPolicy(IQLRNNPolicy):
             SharedPolicyNet(
                 observation_space=observation_space,
                 policy_config=policy_config,
-                action_space=action_space,
+                num_actions=action_space.n,
                 run_type=run_type,
+                use_actions=False,
                 hidden_size=hidden_size,
                 rnn_type=rnn_type,
                 num_recurrent_layers=num_recurrent_layers,
+                is_policy=True,
             ),
             action_space.n,
+        )
+        self.qf1 = SharedQNet(
+            observation_space=observation_space,
+            policy_config=policy_config,
+            num_actions=action_space.n,
+            shared_encoder=self.net.shared_encoder,
+            use_actions=True,
+            hidden_size=hidden_size,
+            rnn_type=rnn_type,
+            num_recurrent_layers=num_recurrent_layers,
+        )
+        self.target_qf1 = SharedQNet(
+            observation_space=observation_space,
+            policy_config=policy_config,
+            num_actions=action_space.n,
+            shared_encoder=self.net.shared_encoder,
+            use_actions=True,
+            hidden_size=hidden_size,
+            rnn_type=rnn_type,
+            num_recurrent_layers=num_recurrent_layers,
+        )
+        self.vf = SharedVNet(
+            observation_space=observation_space,
+            policy_config=policy_config,
+            shared_encoder=self.net.shared_encoder,
         )
 
     @classmethod

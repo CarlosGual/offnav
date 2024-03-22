@@ -52,7 +52,7 @@ class VisualEncoder(nn.Module):
                     bias=False,
                 ),
                 nn.GroupNorm(1, num_compression_channels),
-                nn.ReLU(False),
+                nn.ReLU(True),
             )
 
             output_shape = (
@@ -69,7 +69,5 @@ class VisualEncoder(nn.Module):
             x = F.avg_pool2d(x, 2)
         x = self.running_mean_and_var(x)
         x = self.backbone(x)
-        print('before',x._version)
         x = self.compression(x)
-        print('after', x._version)
         return x

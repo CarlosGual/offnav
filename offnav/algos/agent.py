@@ -693,7 +693,7 @@ class SharedAgent(nn.Module):
         self.policy_optimizer = optim.Adam(
             list(
                 filter(
-                    lambda p: p.requires_grad, actor_critic.parameters()
+                    lambda p: p.requires_grad, actor_critic.net.policy.parameters()
                 )
             ),
             lr=policy_lr,
@@ -703,7 +703,7 @@ class SharedAgent(nn.Module):
         self.qf1_optimizer = optim.Adam(
             list(
                 filter(
-                    lambda p: p.requires_grad, actor_critic.qf1.parameters()
+                    lambda p: p.requires_grad, actor_critic.net.qf1.parameters()
                 )
             ),
             lr=qf_lr,
@@ -713,7 +713,7 @@ class SharedAgent(nn.Module):
         self.vf_optimizer = optim.Adam(
             list(
                 filter(
-                    lambda p: p.requires_grad, actor_critic.vf.parameters()
+                    lambda p: p.requires_grad, actor_critic.net.vf.parameters()
                 )
             ),
             lr=qf_lr,
@@ -755,107 +755,89 @@ class SharedAgent(nn.Module):
             prev_actions = batch["prev_actions"]
             inflections_batch = batch["observations"]["inflection_weight"]
 
-            with torch.autograd.detect_anomaly():
+            predictions = self.actor_critic(obs, next_obs, rnn_hidden_states, prev_actions, actions, masks)
 
-                # Put all predictions together
-                dist, rnn_hidden_policy, entropy = self.actor_critic(obs, rnn_hidden_states['policy'], actions,
-                                                                     prev_actions, masks)
-                q1_pred, rnn_hidden_q1 = self.actor_critic.qf1(obs, rnn_hidden_states['qf1'], actions, prev_actions, masks)
-                # q2_pred, rnn_hidden_q2 = self.actor_critic.qf2(obs, rnn_hidden_states, actions, masks)
-                target_vf_pred = self.actor_critic.vf(next_obs, actions).detach()
-                tq1_pred, rnn_hidden_tq1 = self.actor_critic.target_qf1(obs, rnn_hidden_states['tqf1'], actions,
-                                                                        prev_actions, masks)
-                # tq2_pred, rnn_hidden_tq2 = self.actor_critic.target_qf2(obs, rnn_hidden_states, actions, masks)
-                q_pred = tq1_pred.detach()
-                vf_pred = self.actor_critic.vf(obs, actions)
+            """
+            QF Loss
+            """
+            q_target = rewards + (1. - terminals) * self.discount * predictions['target_vf_pred']
+            q_target = q_target.detach()
+            qf1_loss = self.qf_criterion(predictions['q1_pred'], q_target)
+            # qf2_loss = self.qf_criterion(q2_pred, q_target)
 
-                """
-                QF Loss
-                """
-                q_target = rewards + (1. - terminals) * self.discount * target_vf_pred
-                q_target = q_target.detach()
-                qf1_loss = self.qf_criterion(q1_pred, q_target)
-                # qf2_loss = self.qf_criterion(q2_pred, q_target)
+            """
+            VF Loss
+            """
+            vf_err = predictions['vf_pred'] - predictions['q_pred']
+            vf_sign = (vf_err > 0).float()
+            vf_weight = (1 - vf_sign) * self.quantile + vf_sign * (1 - self.quantile)
+            vf_loss = (vf_weight * (vf_err ** 2)).mean()
 
-                """
-                VF Loss
-                """
-                vf_err = vf_pred - q_pred
-                vf_sign = (vf_err > 0).float()
-                vf_weight = (1 - vf_sign) * self.quantile + vf_sign * (1 - self.quantile)
-                vf_loss = (vf_weight * (vf_err ** 2)).mean()
+            """
+            Policy Loss
+            """
+            policy_logpp = predictions['dist'].log_prob(actions.squeeze())
+            policy_loss_term = (inflections_batch * policy_logpp).sum(0) / inflections_batch.sum(0)
+            sampled_actions = predictions['dist'].sample().detach().cpu().numpy()
+            deterministic_actions = predictions['dist'].mode().detach().cpu().numpy()
+            dataset_actions = actions.detach().cpu().numpy()
+            adv = predictions['q_pred'] - predictions['vf_pred']
+            weighted_adv = (adv * inflections_batch).sum(0) / inflections_batch.sum(0)
+            exp_adv = torch.exp(weighted_adv * self.beta)
+            if self.clip_score is not None:
+                exp_adv = torch.clamp(exp_adv, max=self.clip_score)
+            weights = exp_adv.detach()
+            policy_loss = (-policy_loss_term * weights).mean()
 
-                """
-                Policy Loss
-                """
-                policy_logpp = dist.log_prob(actions.squeeze())
-                policy_loss_term = (inflections_batch * policy_logpp).sum(0) / inflections_batch.sum(0)
-                sampled_actions = dist.sample().detach().cpu().numpy()
-                deterministic_actions = dist.mode().detach().cpu().numpy()
-                dataset_actions = actions.detach().cpu().numpy()
-                adv = q_pred - vf_pred
-                weighted_adv = (adv * inflections_batch).sum(0) / inflections_batch.sum(0)
-                exp_adv = torch.exp(weighted_adv * self.beta)
-                if self.clip_score is not None:
-                    exp_adv = torch.clamp(exp_adv, max=self.clip_score)
-                weights = exp_adv.detach()
-                policy_loss = (-policy_loss_term * weights).mean()
+            """
+            Update networks
+            """
 
-                """
-                Update networks
-                """
+            if num_steps_done % self.q_update_period == 0:
 
-                if num_steps_done % self.q_update_period == 0:
+                self.qf1_optimizer.zero_grad()
+                qf1_loss.backward()
+                self.qf1_optimizer.step()
 
-                    # Freeze shared encoder
-                    self.actor_critic.freeze_visual_encoders()
+                # self.qf2_optimizer.zero_grad()
+                # qf2_loss.backward()
+                # self.qf2_optimizer.step()
 
-                    self.qf1_optimizer.zero_grad()
-                    qf1_loss.backward()
-                    self.qf1_optimizer.step()
+                self.vf_optimizer.zero_grad()
+                vf_loss.backward()
+                self.vf_optimizer.step()
 
-                    # self.qf2_optimizer.zero_grad()
-                    # qf2_loss.backward()
-                    # self.qf2_optimizer.step()
+            if num_steps_done % self.policy_update_period == 0:
 
-                    self.vf_optimizer.zero_grad()
-                    vf_loss.backward()
-                    self.vf_optimizer.step()
+                self.policy_optimizer.zero_grad()
+                policy_loss.backward()
+                self.policy_optimizer.step()
 
-                if num_steps_done % self.policy_update_period == 0:
+            """
+            Soft Updates
+            """
+            if num_steps_done % self.target_update_period == 0:
+                soft_update_from_to(
+                    self.actor_critic.net.qf1, self.actor_critic.net.target_qf1, self.soft_target_tau
+                )
+                # soft_update_from_to(
+                #     self.actor_critic.qf2, self.actor_critic.target_qf2, self.soft_target_tau
+                # )
 
-                    # Unfreeze shared encoder
-                    self.actor_critic.unfreeze_visual_encoders()
-
-                    self.policy_optimizer.zero_grad()
-                    policy_loss.backward()
-                    self.policy_optimizer.step()
-
-                """
-                Soft Updates
-                """
-                if num_steps_done % self.target_update_period == 0:
-                    soft_update_from_to(
-                        self.actor_critic.qf1, self.actor_critic.target_qf1, self.soft_target_tau
-                    )
-                    # soft_update_from_to(
-                    #     self.actor_critic.qf2, self.actor_critic.target_qf2, self.soft_target_tau
-                    # )
-
-                hidden_states_qf1.append(rnn_hidden_q1)
-                hidden_states_tqf1.append(rnn_hidden_tq1)
-                hidden_states_policy.append(rnn_hidden_policy)
-                total_sampled_actions.append(sampled_actions.squeeze(1))
-                total_deterministic_actions.append(deterministic_actions.squeeze(1))
-                total_dataset_actions.append(dataset_actions.squeeze(1))
-                total_qf1_loss += qf1_loss.item()
-                total_policy_loss += policy_loss.item()
-                total_q1_pred += q1_pred.mean().item()
-                total_q_target += q_target.mean().item()
-                total_weights += weights.mean().item()
-                total_adv += adv.mean().item()
-                total_vf_pred += vf_pred.mean().item()
-                total_vf_loss += vf_loss.mean().item()
+            hidden_states_qf1.append(predictions['rnn_hidden_q1'])
+            hidden_states_tqf1.append(predictions['rnn_hidden_tq1'])
+            hidden_states_policy.append(predictions['rnn_hidden_policy'])
+            total_sampled_actions.append(sampled_actions.squeeze(1))
+            total_deterministic_actions.append(deterministic_actions.squeeze(1))
+            total_dataset_actions.append(dataset_actions.squeeze(1))
+            total_qf1_loss += qf1_loss.item()
+            total_policy_loss += policy_loss.item()
+            total_q1_pred += predictions['q1_pred'].mean().item()
+            total_q_target += q_target.mean().item()
+            total_weights += weights.mean().item()
+            total_adv += adv.mean().item()
+            total_vf_pred += predictions['vf_pred'].mean().item()
+            total_vf_loss += vf_loss.mean().item()
 
         profiling_wrapper.range_pop()
 

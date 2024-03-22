@@ -207,11 +207,14 @@ class IQLRNNPolicy(nn.Module, Policy):
         )
 
     def forward(self, *x):
-        features, rnn_hidden_states = self.net(*x)
-        distribution = self.action_distribution(features)
+        forward_values = self.net(*x)
+        distribution = self.action_distribution(forward_values['features'])
         distribution_entropy = distribution.entropy().mean()
-
-        return distribution, rnn_hidden_states, distribution_entropy
+        forward_values.update(
+            {'dist': distribution,
+            'entropy': distribution_entropy}
+        )
+        return forward_values
 
     def act(
         self,
@@ -222,7 +225,7 @@ class IQLRNNPolicy(nn.Module, Policy):
         deterministic=False,
         return_distribution=False,
     ):
-        features, rnn_hidden_states = self.net(
+        features, rnn_hidden_states = self.net.policy(
             observations, rnn_hidden_states, None, prev_actions, masks
         )
         distribution = self.action_distribution(features)
