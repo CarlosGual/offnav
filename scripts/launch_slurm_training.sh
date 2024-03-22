@@ -2,7 +2,9 @@
 #AKBATCH -r troll_2
 #SBATCH -N 1
 #SBATCH -J test_shared_heads
-#SBATCH -o slurm-%J.out
+#SBATCH --output=slurm_logs/ddoff-train-%j.out
+#SBATCH --error=slurm_logs/dsoff-train-%j.err
+#SBATCH --ntasks-per-node 2
 
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate habitat
@@ -23,7 +25,7 @@ mkdir -p $CHECKPOINT_DIR
 set -x
 
 echo "In ObjectNav OFFNAV"
-python -u -m torch.distributed.launch \
+srun python -u -m run \
     --use_env \
     --nproc_per_node $NUM_GPUS \
     run.py \
