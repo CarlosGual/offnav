@@ -21,6 +21,6 @@ python -u -m torch.distributed.launch \
     CHECKPOINT_FOLDER $CHECKPOINT_DIR \
     NUM_UPDATES 200000 \
     WANDB_ENABLED True \
-    NUM_ENVIRONMENTS 28 \
+    NUM_ENVIRONMENTS 72 \
     RL.DDPPO.force_distributed True \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz" \

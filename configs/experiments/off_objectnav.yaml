@@ -43,7 +43,7 @@ OFFLINE:
     policy_update_period: 1
     q_update_period: 1
     target_update_period: 1
-    num_mini_batch: 7
+    num_mini_batch: 18
     beta: 3.0
     wd: 0.0001
 
