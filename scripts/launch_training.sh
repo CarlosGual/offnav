@@ -1,14 +1,14 @@
 #!/bin/bash
-export NUM_GPUS=3
+export NUM_GPUS=4
 export GLOG_minloglevel=2
 export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
 
+exp_name="test_shared_heads"
 config="configs/experiments/off_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd"
-TENSORBOARD_DIR="tb/fsfd_3e4_wd"
-CHECKPOINT_DIR="data/fsfd_3e4_wd"
-
+TENSORBOARD_DIR="tb/${exp_name}"
+CHECKPOINT_DIR="data/checkpoints/offnav/${exp_name}"
 
 echo "In ObjectNav OFFNAV"
 python -u -m torch.distributed.launch \
@@ -21,6 +21,6 @@ python -u -m torch.distributed.launch \
     CHECKPOINT_FOLDER $CHECKPOINT_DIR \
     NUM_UPDATES 200000 \
     WANDB_ENABLED True \
-    NUM_ENVIRONMENTS 24 \
+    NUM_ENVIRONMENTS 28 \
     RL.DDPPO.force_distributed True \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz" \
