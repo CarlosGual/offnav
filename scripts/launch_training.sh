@@ -9,7 +9,7 @@ exp_name="late_breaking_results"
 
 config="configs/experiments/off_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_${setup}"
-TENSORBOARD_DIR="tb/${exp_name}"
+TENSORBOARD_DIR="tb/${exp_name}_${setup}"
 CHECKPOINT_DIR="data/checkpoints/offnav/${exp_name}_${setup}"
 
 
