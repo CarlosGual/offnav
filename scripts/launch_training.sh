@@ -1,13 +1,16 @@
 #!/bin/bash
-export NUM_GPUS=4
+export NUM_GPUS=2
 export GLOG_minloglevel=2
 export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
 
+setup="setup2"
+exp_name="late_breaking_results"
+
 config="configs/experiments/off_objectnav.yaml"
-DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd"
-TENSORBOARD_DIR="tb/fsfd_3e5_wd_SimpleRLEnv"
-CHECKPOINT_DIR="data/checkpoints/offnav/fsfd_3e5_wd_SimpleRLEnv"
+DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_${setup}"
+TENSORBOARD_DIR="tb/${exp_name}"
+CHECKPOINT_DIR="data/checkpoints/offnav/${exp_name}_${setup}"
 
 
 echo "In ObjectNav OFFNAV"
