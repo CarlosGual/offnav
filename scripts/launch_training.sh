@@ -4,7 +4,7 @@ export GLOG_minloglevel=2
 export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
 
-setup="setup2"
+setup="setup3"
 exp_name="late_breaking_results_cyclic_lr"
 
 config="configs/experiments/off_objectnav.yaml"
