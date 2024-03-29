@@ -758,7 +758,7 @@ class OffEnvDDTrainer(PPOTrainer):
         # Add learning rates
         if learning_rates is not None:
             for k, lr in learning_rates.items():
-                writer.add_scalar(f"learning_rates/{k}", lr, self.num_steps_done)
+                writer.add_scalar(f"learning_rates/{k[0]}", lr, self.num_steps_done)
 
         # log stats
         if self.num_updates_done % self.config.LOG_INTERVAL == 0:

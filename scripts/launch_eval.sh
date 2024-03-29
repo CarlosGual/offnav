@@ -9,8 +9,8 @@ exp_name="late_breaking_results"
 
 config="configs/experiments/off_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_${setup}"
-TENSORBOARD_DIR="tb/${exp_name}"
-CHECKPOINT_DIR="data/checkpoints/offnav/${exp_name}"
+TENSORBOARD_DIR="tb/${exp_name}_${setup}"
+CHECKPOINT_DIR="data/checkpoints/offnav/${exp_name}_${setup}"
 
 echo "In ObjectNav IL DDP"
 python -u -m run \
@@ -21,5 +21,5 @@ python -u -m run \
     NUM_UPDATES 50000 \
     NUM_ENVIRONMENTS 8 \
     RL.DDPPO.force_distributed True \
-    EVAL.SPLIT "val_mini" \
+    EVAL.SPLIT "val" \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz" \
