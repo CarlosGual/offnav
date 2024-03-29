@@ -40,6 +40,9 @@ OFFLINE:
     policy_lr: 3e-6
     encoder_lr: 1e-3
     qf_lr: 3e-6
+    use_lr_scheduler: True
+    cyclic_lr_gamma: 0.99994
+    use_pretrained_pirlnav: False
     policy_update_period: 1
     q_update_period: 1
     target_update_period: 1

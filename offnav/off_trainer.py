@@ -49,7 +49,7 @@ from habitat_baselines.utils.common import (
     linear_decay,
 )
 from torch import nn as nn, Tensor
-from torch.optim.lr_scheduler import LambdaLR
+from torch.optim.lr_scheduler import LambdaLR, CyclicLR
 
 from offnav.algos.agent import DDPILAgent, OffIQLAgent, OffIQLRNNAgent
 from offnav.common.rollout_storage import RolloutStorage
@@ -517,18 +517,42 @@ class OffEnvDDTrainer(PPOTrainer):
             self._profiler.start()
         count_checkpoints = 0
         prev_time = 0
+        off_cfg = self.config.OFFLINE.IQL
 
-        lr_scheduler = LambdaLR(
+        policy_lr_scheduler = CyclicLR(
             optimizer=self.agent.policy_optimizer,
-            lr_lambda=lambda x: 1 - self.percent_done(),
+            mode='exp_range',
+            base_lr=off_cfg.policy_lr,
+            max_lr=off_cfg.policy_lr*100,
+            gamma=off_cfg.cyclic_lr_gamma,
+        )
+
+        qf1_lr_scheduler = CyclicLR(
+            optimizer=self.agent.qf1_optimizer,
+            mode='exp_range',
+            base_lr=off_cfg.qf_lr,
+            max_lr=off_cfg.qf_lr * 100,
+            gamma=off_cfg.cyclic_lr_gamma,
+        )
+
+        vf_lr_scheduler = CyclicLR(
+            optimizer=self.agent.vf_optimizer,
+            mode='exp_range',
+            base_lr=off_cfg.qf_lr,
+            max_lr=off_cfg.qf_lr * 100,
+            gamma=off_cfg.cyclic_lr_gamma,
         )
 
         resume_state = load_resume_state(self.config)
         if resume_state is not None:
             logger.info('Resuming state...')
             self.agent.load_state_dict(resume_state["state_dict"])
-            self.agent.policy_optimizer.load_state_dict(resume_state["optim_state"])
-            lr_scheduler.load_state_dict(resume_state["lr_sched_state"])
+            self.agent.policy_optimizer.load_state_dict(resume_state["policy_optim_state"])
+            self.agent.qf1_optimizer.load_state_dict(resume_state["qf1_optim_state"])
+            self.agent.vf_optimizer.load_state_dict(resume_state["vf_optim_state"])
+            policy_lr_scheduler.load_state_dict(resume_state["policy_lr_sched_state"])
+            qf1_lr_scheduler.load_state_dict(resume_state["qf1_lr_sched_state"])
+            vf_lr_scheduler.load_state_dict(resume_state["vf_lr_sched_state"])
 
             requeue_stats = resume_state["requeue_stats"]
             self.env_time = requeue_stats["env_time"]
@@ -546,19 +570,19 @@ class OffEnvDDTrainer(PPOTrainer):
                 requeue_stats["window_episode_stats"]
             )
 
-        # logger.info('Loading pretrained checkpoint')
-        # prev_checkpoint = load_pretrained_checkpoint('data/objectnav_il_hd.ckpt')
-        # # Get the submodule names from actor_critic
-        # module_names = [named_children[0] for named_children in list(self.actor_critic.named_children())]
-        # # Drop action distribution from module_names
-        # module_names.remove("action_distribution")
-        # logger.info(f'Adapting state dict to {module_names}')
-        # new_state_dict = adapt_state_dict(prev_checkpoint['state_dict'], module_names)
-        # logger.info(f'Loading adapted state dict into actor critic')
-        # self.agent.load_state_dict(new_state_dict, strict=False)
+        if off_cfg.use_pretrained_pirlnav:
+            logger.info('Loading pretrained checkpoint')
+            prev_checkpoint = load_pretrained_checkpoint('data/objectnav_il_hd.ckpt')
+            # Get the submodule names from actor_critic
+            module_names = [named_children[0] for named_children in list(self.actor_critic.named_children())]
+            # Drop action distribution from module_names
+            module_names.remove("action_distribution")
+            logger.info(f'Adapting state dict to {module_names}')
+            new_state_dict = adapt_state_dict(prev_checkpoint['state_dict'], module_names)
+            logger.info(f'Loading adapted state dict into actor critic')
+            self.agent.load_state_dict(new_state_dict, strict=False)
 
-        ppo_cfg = self.config.RL.PPO
-        off_cfg = self.config.IL.BehaviorCloning
+
 
         with (
                 get_writer(self.config, flush_secs=self.flush_secs)
@@ -593,8 +617,12 @@ class OffEnvDDTrainer(PPOTrainer):
                     save_resume_state(
                         dict(
                             state_dict=self.agent.state_dict(),
-                            optim_state=self.agent.policy_optimizer.state_dict(),
-                            lr_sched_state=lr_scheduler.state_dict(),
+                            policy_optim_state=self.agent.policy_optimizer.state_dict(),
+                            qf1_optim_state=self.agent.qf1_optimizer.state_dict(),
+                            vf_optim_state=self.agent.vf_optimizer.state_dict(),
+                            policy_lr_sched_state=policy_lr_scheduler.state_dict(),
+                            qf1_lr_sched_state=qf1_lr_scheduler.state_dict(),
+                            vf_lr_sched_state=vf_lr_scheduler.state_dict(),
                             config=self.config,
                             requeue_stats=requeue_stats,
                         ),
@@ -650,8 +678,15 @@ class OffEnvDDTrainer(PPOTrainer):
 
                 stats, action_distributions = self._update_agent()
 
-                if off_cfg.use_linear_lr_decay:
-                    lr_scheduler.step()  # type: ignore
+                if off_cfg.use_lr_scheduler:
+                    policy_lr_scheduler.step()
+                    vf_lr_scheduler.step()
+                    qf1_lr_scheduler.step()
+                    learning_rates = dict(
+                        policy_lr=policy_lr_scheduler.get_last_lr(),
+                        qf1_lr=qf1_lr_scheduler.get_last_lr(),
+                        vf_lr=vf_lr_scheduler.get_last_lr()
+                    )
 
                 self.num_updates_done += 1
                 losses = self._coalesce_post_step(
@@ -659,7 +694,7 @@ class OffEnvDDTrainer(PPOTrainer):
                     count_steps_delta,
                 )
 
-                self._training_log(writer, losses, prev_time, action_distributions)
+                self._training_log(writer, losses, prev_time, action_distributions, learning_rates)
 
                 # checkpoint model
                 if rank0_only() and self.should_checkpoint():
@@ -673,12 +708,12 @@ class OffEnvDDTrainer(PPOTrainer):
                     count_checkpoints += 1
 
                 profiling_wrapper.range_pop()  # train update
-            prof.stop()
+            # prof.stop()
             self.envs.close()
 
     @rank0_only
     def _training_log(
-            self, writer, losses: Dict[str, float], prev_time: int = 0, action_distributions=None
+            self, writer, losses: Dict[str, float], prev_time: int = 0, action_distributions=None, learning_rates=None
     ):
         deltas = {
             k: (
@@ -716,6 +751,11 @@ class OffEnvDDTrainer(PPOTrainer):
         if action_distributions is not None:
             for k, dist in action_distributions.items():
                 writer.add_histogram(f"distributions/{k}", dist, self.num_steps_done)
+
+        # Add learning rates
+        if learning_rates is not None:
+            for k, lr in learning_rates.items():
+                writer.add_scalar(f"learning_rates/{k}", lr, self.num_steps_done)
 
         # log stats
         if self.num_updates_done % self.config.LOG_INTERVAL == 0:
