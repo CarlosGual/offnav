@@ -523,7 +523,7 @@ class OffEnvDDTrainer(PPOTrainer):
             optimizer=self.agent.policy_optimizer,
             mode='exp_range',
             base_lr=off_cfg.policy_lr,
-            max_lr=off_cfg.policy_lr*100,
+            max_lr=off_cfg.policy_lr*off_cfg.multiplication_factor_cyclic_lr,
             gamma=off_cfg.cyclic_lr_gamma,
             cycle_momentum=False
         )
@@ -532,7 +532,7 @@ class OffEnvDDTrainer(PPOTrainer):
             optimizer=self.agent.qf1_optimizer,
             mode='exp_range',
             base_lr=off_cfg.qf_lr,
-            max_lr=off_cfg.qf_lr * 100,
+            max_lr=off_cfg.qf_lr * off_cfg.multiplication_factor_cyclic_lr,
             gamma=off_cfg.cyclic_lr_gamma,
             cycle_momentum=False
         )
@@ -541,7 +541,7 @@ class OffEnvDDTrainer(PPOTrainer):
             optimizer=self.agent.vf_optimizer,
             mode='exp_range',
             base_lr=off_cfg.qf_lr,
-            max_lr=off_cfg.qf_lr * 100,
+            max_lr=off_cfg.qf_lr * off_cfg.multiplication_factor_cyclic_lr,
             gamma=off_cfg.cyclic_lr_gamma,
             cycle_momentum=False
         )

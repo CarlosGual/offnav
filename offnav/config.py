@@ -162,6 +162,7 @@ _CONFIG.OFFLINE.IQL.use_linear_clip_decay = False
 _CONFIG.OFFLINE.IQL.use_lr_scheduler = True
 _CONFIG.OFFLINE.IQL.use_pretrained_pirlnav = False
 _CONFIG.OFFLINE.IQL.cyclic_lr_gamma = 0.99994
+_CONFIG.OFFLINE.IQL.multiplication_factor_cyclic_lr = 10
 _CONFIG.OFFLINE.IQL.reward_window_size = 50
 _CONFIG.OFFLINE.IQL.sync_frac = 0.6
 _CONFIG.OFFLINE.IQL.use_double_buffered_sampler = False
