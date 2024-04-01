@@ -4,8 +4,8 @@ export GLOG_minloglevel=2
 export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
 
-setup="setup3"
-exp_name="late_breaking_results_cyclic_lr"
+setup="full"
+exp_name="cyclic_lr"
 
 config="configs/experiments/off_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_${setup}"
@@ -25,5 +25,6 @@ python -u -m torch.distributed.launch \
     NUM_UPDATES 200000 \
     WANDB_ENABLED True \
     NUM_ENVIRONMENTS 32 \
+    OFFLINE.IQL.num_mini_batch 8 \
     RL.DDPPO.force_distributed True \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz" \

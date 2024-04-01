@@ -3,7 +3,7 @@
     <deployment type="dockerfile">
       <settings>
         <option name="imageTag" value="offnav" />
-        <option name="containerName" value="offnav_eval3" />
+        <option name="containerName" value="offnav_eval2" />
         <option name="envVars">
           <list>
             <DockerEnvVarImpl>
