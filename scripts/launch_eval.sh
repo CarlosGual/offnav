@@ -4,13 +4,13 @@ export GLOG_minloglevel=2
 export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
 
-setup="setup4"
+setup="setup3"
 exp_name="late_breaking_results_cyclic_lr"
 
 config="configs/experiments/off_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_${setup}"
 TENSORBOARD_DIR="tb/${exp_name}_${setup}"
-CHECKPOINT_DIR="data/checkpoints/offnav/${exp_name}_setup3" #${setup}"
+CHECKPOINT_DIR="data/checkpoints/offnav/${exp_name}_${setup}"
 
 echo "In ObjectNav IL DDP"
 python -u -m run \
