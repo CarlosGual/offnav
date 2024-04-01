@@ -5,7 +5,7 @@ export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
 
 setup="setup5"
-exp_name="late_breaking_results"
+exp_name="late_breaking_results_cyclic_lr"
 
 config="configs/experiments/off_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_${setup}"
