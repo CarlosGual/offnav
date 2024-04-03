@@ -3,12 +3,12 @@
     <deployment type="dockerfile">
       <settings>
         <option name="imageTag" value="offnav" />
-        <option name="containerName" value="offnav" />
+        <option name="containerName" value="offnav_eval2" />
         <option name="envVars">
           <list>
             <DockerEnvVarImpl>
               <option name="name" value="CUDA_VISIBLE_DEVICES" />
-              <option name="value" value="2,3,5,6" />
+              <option name="value" value="0" />
             </DockerEnvVarImpl>
             <DockerEnvVarImpl>
               <option name="name" value="WANDB_API_KEY" />

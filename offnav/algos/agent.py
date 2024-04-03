@@ -428,7 +428,7 @@ class IQLRNNAgent(nn.Module):
         self.vf_criterion = nn.MSELoss()
 
         # Optimizers
-        self.policy_optimizer = optim.Adam(
+        self.policy_optimizer = optim.AdamW(
             list(
                 filter(
                     lambda p: p.requires_grad, actor_critic.parameters()
@@ -438,7 +438,7 @@ class IQLRNNAgent(nn.Module):
             weight_decay=policy_weight_decay,
             eps=eps,
         )
-        self.qf1_optimizer = optim.Adam(
+        self.qf1_optimizer = optim.AdamW(
             list(
                 filter(
                     lambda p: p.requires_grad, actor_critic.qf1.parameters()
@@ -448,7 +448,7 @@ class IQLRNNAgent(nn.Module):
             weight_decay=q_weight_decay,
             eps=eps,
         )
-        self.vf_optimizer = optim.Adam(
+        self.vf_optimizer = optim.AdamW(
             list(
                 filter(
                     lambda p: p.requires_grad, actor_critic.vf.parameters()
