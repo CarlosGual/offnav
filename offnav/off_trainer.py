@@ -525,7 +525,8 @@ class OffEnvDDTrainer(PPOTrainer):
             base_lr=off_cfg.policy_lr,
             max_lr=off_cfg.policy_lr*off_cfg.multiplication_factor_cyclic_lr,
             gamma=off_cfg.cyclic_lr_gamma,
-            cycle_momentum=False
+            cycle_momentum=False,
+            step_size_up=20000
         )
 
         qf1_lr_scheduler = CyclicLR(
@@ -534,7 +535,8 @@ class OffEnvDDTrainer(PPOTrainer):
             base_lr=off_cfg.qf_lr,
             max_lr=off_cfg.qf_lr * off_cfg.multiplication_factor_cyclic_lr,
             gamma=off_cfg.cyclic_lr_gamma,
-            cycle_momentum=False
+            cycle_momentum=False,
+            step_size_up=20000
         )
 
         vf_lr_scheduler = CyclicLR(
@@ -543,7 +545,8 @@ class OffEnvDDTrainer(PPOTrainer):
             base_lr=off_cfg.qf_lr,
             max_lr=off_cfg.qf_lr * off_cfg.multiplication_factor_cyclic_lr,
             gamma=off_cfg.cyclic_lr_gamma,
-            cycle_momentum=False
+            cycle_momentum=False,
+            step_size_up=20000
         )
 
         resume_state = load_resume_state(self.config)
