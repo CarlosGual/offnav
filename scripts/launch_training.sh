@@ -8,7 +8,7 @@ setup="full"
 exp_name="cyclic_lr"
 
 config="configs/experiments/off_objectnav.yaml"
-DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd" #_${setup}"
+DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd" # _${setup}"
 TENSORBOARD_DIR="tb/${exp_name}_${setup}"
 CHECKPOINT_DIR="data/checkpoints/offnav/${exp_name}_${setup}"
 
