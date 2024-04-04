@@ -1,5 +1,15 @@
 #!/bin/bash
-export NUM_GPUS=4
+
+# Get number of GPUs
+if [ -z "$CUDA_VISIBLE_DEVICES" ]
+then
+    echo "CUDA_VISIBLE_DEVICES is not set"
+else
+    IFS=',' read -ra ADDR <<< "$CUDA_VISIBLE_DEVICES"
+    num_gpus=${#ADDR[@]}
+    echo "Number of GPUs: $num_gpus"
+fi
+
 export GLOG_minloglevel=2
 export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
@@ -16,7 +26,7 @@ CHECKPOINT_DIR="data/checkpoints/offnav/${exp_name}_${setup}"
 echo "In ObjectNav OFFNAV"
 python -u -m torch.distributed.launch \
     --use_env \
-    --nproc_per_node $NUM_GPUS \
+    --nproc_per_node $num_gpus \
     run.py \
     --exp-config $config \
     --run-type train \
