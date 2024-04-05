@@ -4,7 +4,6 @@
 #SBATCH -J test_shared_heads
 #SBATCH --output=slurm_logs/ddoff-train-%j.out
 #SBATCH --error=slurm_logs/ddoff-train-%j.err
-#SBATCH --ntasks-per-node 2
 
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate habitat
@@ -26,7 +25,7 @@ mkdir -p slurm_logs
 set -x
 
 echo "In ObjectNav OFFNAV"
-srun python -u -m run \
+python -u -m torch.distributed.launch \
     --use_env \
     --nproc_per_node $NUM_GPUS \
     run.py \
