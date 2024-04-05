@@ -24,6 +24,8 @@ mkdir -p $CHECKPOINT_DIR
 mkdir -p slurm_logs
 set -x
 
+conda list
+
 echo "In ObjectNav OFFNAV"
 python -u -m torch.distributed.launch \
     --use_env \
