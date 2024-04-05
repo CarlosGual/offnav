@@ -3,7 +3,6 @@
 #SBATCH -N 1
 #SBATCH -J test_shared_heads
 #SBATCH --output=slurm_logs/ddoff-train-%j.out
-#SBATCH --error=slurm_logs/ddoff-train-%j.err
 
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate habitat
