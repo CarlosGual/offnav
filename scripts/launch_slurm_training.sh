@@ -7,7 +7,16 @@
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate habitat
 
-export NUM_GPUS=2
+# Get number of GPUs
+if [ -z "$GPU_DEVICE_ORDINAL" ]
+then
+    echo "CUDA_VISIBLE_DEVICES is not set"
+else
+    IFS=',' read -ra ADDR <<< "$GPU_DEVICE_ORDINAL"
+    NUM_GPUS=${#ADDR[@]}
+    echo "Number of GPUs: $NUM_GPUS"
+fi
+
 export GLOG_minloglevel=2
 export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
