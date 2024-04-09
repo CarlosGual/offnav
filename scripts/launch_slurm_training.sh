@@ -1,9 +1,10 @@
 #!/bin/bash
-#AKBATCH -r troll_2
+#AKBATCH -r wyvern_2
 #SBATCH -N 1
 #SBATCH -J test_shared_heads
 #SBATCH --output=slurm_logs/ddoff-train-%j.out
 
+# shellcheck disable=SC1090
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate habitat
 
@@ -16,6 +17,9 @@ else
     NUM_GPUS=${#ADDR[@]}
     echo "Number of GPUs: $NUM_GPUS"
 fi
+
+# Use the number of GPUs for the --ntasks-per-node option
+#SBATCH --ntasks-per-node=$NUM_GPUS
 
 export GLOG_minloglevel=2
 export MAGNUM_LOG=quiet
@@ -32,19 +36,21 @@ mkdir -p $CHECKPOINT_DIR
 mkdir -p slurm_logs
 set -x
 
-conda list
+# ******************* These are read internally it seems ***********************************
+# ******** Master port, address and world size MUST be passed as variables for DDP to work
+MAIN_ADDR=$(scontrol show hostnames "${SLURM_JOB_NODELIST}" | head -n 1)
+export MAIN_ADDR
+# ******************************************************************************************
 
 echo "In ObjectNav OFFNAV"
-python -u -m torch.distributed.launch \
-    --use_env \
-    --nproc_per_node $NUM_GPUS \
-    run.py \
+srun python -u -m run \
     --exp-config $config \
     --run-type train \
     TENSORBOARD_DIR $TENSORBOARD_DIR \
     CHECKPOINT_FOLDER $CHECKPOINT_DIR \
     NUM_UPDATES 200000 \
     WANDB_ENABLED True \
-    NUM_ENVIRONMENTS 16 \
+    NUM_ENVIRONMENTS 120 \
+    OFFLINE.IQL.num_mini_batch 30 \
     RL.DDPPO.force_distributed True \
-    TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz" \
+    TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz"
