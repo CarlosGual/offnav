@@ -51,11 +51,11 @@ from habitat_baselines.utils.common import (
 from torch import nn as nn, Tensor
 from torch.optim.lr_scheduler import LambdaLR, CyclicLR
 
-from offnav.algos.agent import DDPILAgent, OffIQLAgent, OffIQLRNNAgent
+from offnav.algos.agent import DDPILAgent, OffIQLAgent, OffIQLRNNAgent, DDSharedAgent
 from offnav.common.rollout_storage import RolloutStorage
 from offnav.utils.utils import load_pretrained_checkpoint, adapt_state_dict
 from torch.profiler import profile
-
+from offnav.policy.shared_qrnn_policy import ObjectNavSharedPolicy
 
 @baseline_registry.register_trainer(name="offnav")
 class OffEnvDDTrainer(PPOTrainer):
@@ -87,7 +87,7 @@ class OffEnvDDTrainer(PPOTrainer):
         )
         self.actor_critic.to(self.device)
 
-        self.agent = OffIQLRNNAgent(
+        self.agent = DDSharedAgent(
             actor_critic=self.actor_critic,
             num_envs=self.envs.num_envs,
             num_mini_batch=off_cfg.num_mini_batch,
