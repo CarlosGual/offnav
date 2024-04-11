@@ -465,7 +465,7 @@ class IQLRNNAgent(nn.Module):
         raise NotImplementedError
 
     def update(self, rollouts, num_steps_done) -> Tuple[float, Any, float, float]:
-        profiling_wrapper.range_push("SharedOFF.update epoch")
+        profiling_wrapper.range_push("OFF.update epoch")
         data_generator = rollouts.recurrent_generator(self.num_mini_batch)
         hidden_states_qf1 = []
         hidden_states_tqf1 = []
@@ -497,13 +497,11 @@ class IQLRNNAgent(nn.Module):
             q1_pred, rnn_hidden_q1 = self.actor_critic.qf1(obs, rnn_hidden_states['qf1'], actions, prev_actions, masks)
             # q2_pred, rnn_hidden_q2 = self.actor_critic.qf2(obs, rnn_hidden_states, actions, masks)
             target_vf_pred = self.actor_critic.vf(next_obs, actions).detach()
-            tq1_pred, rnn_hidden_tq1 = self.actor_critic.target_qf1(obs, rnn_hidden_states['tqf1'], actions,
-                                                                    prev_actions, masks)
+            tq1_pred, rnn_hidden_tq1 = self.actor_critic.target_qf1(obs, rnn_hidden_states['tqf1'], actions, prev_actions, masks)
             # tq2_pred, rnn_hidden_tq2 = self.actor_critic.target_qf2(obs, rnn_hidden_states, actions, masks)
             q_pred = tq1_pred.detach()
             vf_pred = self.actor_critic.vf(obs, actions)
-            dist, rnn_hidden_policy, entropy = self.actor_critic(obs, rnn_hidden_states['policy'], actions,
-                                                                 prev_actions, masks)
+            dist, rnn_hidden_policy, entropy = self.actor_critic(obs, rnn_hidden_states['policy'], actions, prev_actions, masks)
 
             """
             QF Loss

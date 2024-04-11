@@ -207,6 +207,115 @@ class IQLRNNPolicy(nn.Module, Policy):
         )
 
     def forward(self, *x):
+        features, rnn_hidden_states = self.net(*x)
+        distribution = self.action_distribution(features)
+        distribution_entropy = distribution.entropy().mean()
+
+        return distribution, rnn_hidden_states, distribution_entropy
+
+    def act(
+        self,
+        observations,
+        rnn_hidden_states,
+        prev_actions,
+        masks,
+        deterministic=False,
+        return_distribution=False,
+    ):
+        features, rnn_hidden_states = self.net(
+            observations, rnn_hidden_states, None, prev_actions, masks
+        )
+        distribution = self.action_distribution(features)
+
+        if deterministic:
+            action = distribution.mode()
+        else:
+            action = distribution.sample()
+        action_log_probs = distribution.log_probs(action)
+        distribution_entropy = distribution.entropy().mean()
+
+        return (
+            action,
+            # action_log_probs,
+            rnn_hidden_states,
+        )
+
+    def get_value(self, observations, rnn_hidden_states, actions, masks):
+        features, _ = self.net(
+            observations, rnn_hidden_states, actions, masks
+        )
+        return self.critic(features)
+
+    def evaluate_actions(
+        self, observations, rnn_hidden_states, actions, masks, action
+    ):
+        features, rnn_hidden_states = self.net(
+            observations, rnn_hidden_states, actions, masks
+        )
+        distribution = self.action_distribution(features)
+        value = self.critic(features)
+
+        action_log_probs = distribution.log_probs(action)
+        distribution_entropy = distribution.entropy().mean()
+
+        return (
+            value,
+            action_log_probs,
+            distribution_entropy,
+            rnn_hidden_states,
+        )
+
+    @classmethod
+    @abc.abstractmethod
+    def from_config(cls, config, observation_space, action_space):
+        pass
+
+
+class CriticHead(nn.Module):
+    def __init__(self, input_size):
+        super().__init__()
+        self.fc = nn.Linear(input_size, 1)
+        nn.init.orthogonal_(self.fc.weight)
+        nn.init.constant_(self.fc.bias, 0)
+
+    def forward(self, x):
+        return self.fc(x)
+
+
+class MLPCriticHead(nn.Module):
+    def __init__(self, input_size, hidden_dim=512):
+        super().__init__()
+        self.fc = nn.Sequential(
+            nn.Linear(input_size, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1),
+        )
+        nn.init.orthogonal_(self.fc[0].weight)
+        nn.init.constant_(self.fc[0].bias, 0)
+
+        nn.init.orthogonal_(self.fc[2].weight)
+        nn.init.constant_(self.fc[2].bias, 0)
+
+    def forward(self, x):
+        return self.fc(x.detach())
+
+
+
+class IQLSharedPolicy(nn.Module, Policy):
+    def __init__(
+        self,
+        net,
+        dim_actions,
+
+    ):
+        super().__init__()
+        self.net = net
+        self.dim_actions = dim_actions
+        self.action_distribution = CategoricalNet(
+            self.net.output_size, self.dim_actions
+        )
+
+    def forward(self, *x):
         forward_values = self.net(*x)
         distribution = self.action_distribution(forward_values['features'])
         distribution_entropy = distribution.entropy().mean()

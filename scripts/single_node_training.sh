@@ -1,7 +1,7 @@
 #!/bin/bash
-#AKBATCH -r wyvern_3
+#AKBATCH -r slime_3
 #SBATCH -N 1
-#SBATCH -J default_cyclic_lr_resnet18
+#SBATCH -J shared_long_test
 #SBATCH --output=slurm_logs/%x-%j.out
 
 # shellcheck disable=SC1090
@@ -25,7 +25,7 @@ export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
 export OMP_NUM_THREADS=$((num_cpus/num_gpus))
 
-setup="setup3"
+setup="setup1"
 config="configs/experiments/off_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_${setup}"
 TENSORBOARD_DIR="tb/${SLURM_JOB_NAME}_${setup}"

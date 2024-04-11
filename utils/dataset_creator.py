@@ -9,7 +9,7 @@ n_envs = 10
 setup = 'setup5'
 
 # Get the list of available datasets
-dataset_paths = os.listdir('data/datasets/objectnav/objectnav_hm3d_hd_setup3/train/content/')
+dataset_paths = os.listdir('../data/datasets/objectnav/objectnav_hm3d_hd_setup3/train/content/')
 
 # Get n random datasets
 datasets_list = random.sample(dataset_paths, n_envs)

@@ -8,7 +8,7 @@ from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.models.rnn_state_encoder import build_rnn_state_encoder
 from habitat_baselines.rl.ppo import Net
 
-from offnav.policy.policy import IQLRNNPolicy, CriticHead, MLPCriticHead
+from offnav.policy.policy import IQLRNNPolicy, CriticHead, MLPCriticHead, IQLSharedPolicy
 from offnav.policy.transforms import get_transform
 from offnav.policy.visual_encoder import VisualEncoder
 from offnav.utils.utils import load_encoder
@@ -573,7 +573,7 @@ class SharedPolicyNet(Net):
 
 
 @baseline_registry.register_policy
-class ObjectNavSharedPolicy(IQLRNNPolicy):
+class ObjectNavSharedPolicy(IQLSharedPolicy):
     def __init__(
             self,
             observation_space: Space,
