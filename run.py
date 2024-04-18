@@ -101,10 +101,13 @@ def run_exp(exp_config: str, run_type: str, opts=None) -> None:
     config = get_config(exp_config, opts)
 
     if config.WANDB_ENABLED:
-        local_rank = int(os.getenv("LOCAL_RANK", 0))
-        if local_rank == 0:
-            wandb.init(project="offnav", name=f'{run_type}-{config.TENSORBOARD_DIR.split("/")[-1]}', sync_tensorboard=True,
-                       config=config, tags=[f'{run_type}'])
+        local_rank = os.getenv("LOCAL_RANK", False)
+        global_rank = os.getenv("RANK", False)
+        # print(f"local_rank: {local_rank}, global_rank: {global_rank}")
+        if int(global_rank) == 0:  # multinode job
+            wandb.init(project="offnav", name=f'{run_type}-{config.TENSORBOARD_DIR.split("/")[-1]}',
+                       sync_tensorboard=True,
+                       config=config, tags=[f'{run_type}', 'tsubame'])
     execute_exp(config, run_type)
 
 

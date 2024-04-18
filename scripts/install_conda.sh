@@ -2,7 +2,7 @@
 source ~/miniconda3/etc/profile.d/conda.sh
 
 # Create a conda environment
-conda create -n habitat python=3.7 cmake=3.14.0 -y
+conda create -n habitat python=3.8 cmake=3.14.0 -y
 conda activate habitat
 
 # Setup habitat-sim
@@ -13,7 +13,7 @@ python setup.py install --headless
 cd ..
 
 # Install PyTorch
-pip install torch==1.12.1+cu113 torchvision==0.13.1+cu113 torchaudio==0.12.1 --extra-index-url https://download.pytorch.org/whl/cu113
+pip3 install torch torchvision torchaudio
 
 # Install additional Python packages
 pip install gym==0.22.0 urllib3==1.25.11
