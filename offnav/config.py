@@ -159,10 +159,7 @@ _CONFIG.OFFLINE.IQL.num_mini_batch = 2
 _CONFIG.OFFLINE.IQL.max_grad_norm = 0.2
 _CONFIG.OFFLINE.IQL.num_steps = 64
 _CONFIG.OFFLINE.IQL.use_linear_clip_decay = False
-_CONFIG.OFFLINE.IQL.use_lr_scheduler = True
 _CONFIG.OFFLINE.IQL.use_pretrained_pirlnav = False
-_CONFIG.OFFLINE.IQL.cyclic_lr_gamma = 0.99994
-_CONFIG.OFFLINE.IQL.multiplication_factor_cyclic_lr = 10.0
 _CONFIG.OFFLINE.IQL.reward_window_size = 50
 _CONFIG.OFFLINE.IQL.sync_frac = 0.6
 _CONFIG.OFFLINE.IQL.use_double_buffered_sampler = False
@@ -173,6 +170,11 @@ _CONFIG.OFFLINE.IQL.policy_update_period = 1
 _CONFIG.OFFLINE.IQL.q_update_period = 1
 _CONFIG.OFFLINE.IQL.target_update_period = 1
 _CONFIG.OFFLINE.IQL.beta = 1.0/3
+_CONFIG.OFFLINE.IQL.use_lr_scheduler = True
+_CONFIG.OFFLINE.IQL.CYCLIC_LR = CN()
+_CONFIG.OFFLINE.IQL.CYCLIC_LR.gamma = 0.99994
+_CONFIG.OFFLINE.IQL.CYCLIC_LR.multiplication_factor = 10.0
+_CONFIG.OFFLINE.IQL.CYCLIC_LR.step_size_up = 2000
 
 ##############################################
 # Policy config

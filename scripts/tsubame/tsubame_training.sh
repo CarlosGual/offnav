@@ -1,6 +1,6 @@
 #!/bin/sh
 #$ -cwd
-#$ -l node_f=20
+#$ -l node_q=64
 #$ -j y
 #$ -l h_rt=24:00:00
 #$ -o slurm_logs/$JOB_NAME_$JOB_ID.out
@@ -41,7 +41,7 @@ export OMP_NUM_THREADS=$((num_cpus/num_gpus))
 export NNODES=$NHOSTS
 export NPERNODE=$num_gpus
 export NP=$(($NPERNODE * $NNODES))
-export MASTER_ADDR=`head -n 1 $SGE_JOB_SPOOL_DIR/pe_hostfile | cut -d " " -f 1`
+export MASTER_ADDR=$(head -n 1 "$SGE_JOB_SPOOL_DIR"/pe_hostfile | cut -d " " -f 1)
 export MASTER_PORT=$((10000+ ($JOB_ID % 50000)))
 echo NNODES=$NNODES
 echo NPERNODE=$NPERNODE
@@ -51,10 +51,12 @@ echo MASTERPORT=$MASTER_PORT
 # ******************************************************************
 
 echo "In ObjectNav OFFNAV"
-mpirun -np $NP -npernode $NPERNODE \
-  apptainer exec --nv \
-    --bind /gs/fs/tga-aklab/data \
-    --bind /gs/fs/tga-aklab/carlos/repositorios \
-    --bind /gs/fs/tga-aklab/carlos/miniconda3 \
-    apptainer/offnav.sif \
-    bash scripts/train_multi_node.sh
+mpirun \
+  -np $NP \
+  -npernode $NPERNODE \
+    apptainer exec --nv \
+      --bind /gs/fs/tga-aklab/data \
+      --bind /gs/fs/tga-aklab/carlos/repositorios \
+      --bind /gs/fs/tga-aklab/carlos/miniconda3 \
+      apptainer/offnav.sif \
+      bash scripts/train_multi_node.sh

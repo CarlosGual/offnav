@@ -32,6 +32,7 @@ from habitat_baselines.rl.ddppo.ddp_utils import (
     EXIT,
     add_signal_handlers,
     init_distrib_slurm,
+    # init_distrib_tsubame,
     is_slurm_batch_job,
     load_resume_state,
     rank0_only,
@@ -522,30 +523,30 @@ class OffEnvDDTrainer(PPOTrainer):
             optimizer=self.agent.policy_optimizer,
             mode='exp_range',
             base_lr=off_cfg.policy_lr,
-            max_lr=off_cfg.policy_lr*off_cfg.multiplication_factor_cyclic_lr,
-            gamma=off_cfg.cyclic_lr_gamma,
+            max_lr=off_cfg.policy_lr*off_cfg.CYCLIC_LR.multiplication_factor,
+            gamma=off_cfg.CYCLIC_LR.gamma,
             cycle_momentum=False,
-            step_size_up=20000
+            step_size_up=off_cfg.CYCLIC_LR.step_size_up
         )
 
         qf1_lr_scheduler = CyclicLR(
-            optimizer=self.agent.qf1_optimizer,
+            optimizer=self.agent.policy_optimizer,
             mode='exp_range',
-            base_lr=off_cfg.qf_lr,
-            max_lr=off_cfg.qf_lr * off_cfg.multiplication_factor_cyclic_lr,
-            gamma=off_cfg.cyclic_lr_gamma,
+            base_lr=off_cfg.policy_lr,
+            max_lr=off_cfg.policy_lr * off_cfg.CYCLIC_LR.multiplication_factor,
+            gamma=off_cfg.CYCLIC_LR.gamma,
             cycle_momentum=False,
-            step_size_up=20000
+            step_size_up=off_cfg.CYCLIC_LR.step_size_up
         )
 
         vf_lr_scheduler = CyclicLR(
-            optimizer=self.agent.vf_optimizer,
+            optimizer=self.agent.policy_optimizer,
             mode='exp_range',
-            base_lr=off_cfg.qf_lr,
-            max_lr=off_cfg.qf_lr * off_cfg.multiplication_factor_cyclic_lr,
-            gamma=off_cfg.cyclic_lr_gamma,
+            base_lr=off_cfg.policy_lr,
+            max_lr=off_cfg.policy_lr * off_cfg.CYCLIC_LR.multiplication_factor,
+            gamma=off_cfg.CYCLIC_LR.gamma,
             cycle_momentum=False,
-            step_size_up=20000
+            step_size_up=off_cfg.CYCLIC_LR.step_size_up
         )
 
         resume_state = load_resume_state(self.config)
@@ -811,6 +812,7 @@ class OffEnvDDTrainer(PPOTrainer):
         Returns:
             None
         """
+        self._is_distributed = False
         if self._is_distributed:
             raise RuntimeError("Evaluation does not support distributed mode")
 

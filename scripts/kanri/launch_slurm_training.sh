@@ -34,13 +34,6 @@ CHECKPOINT_DIR="data/checkpoints/offnav/${exp_name}"
 mkdir -p $TENSORBOARD_DIR
 mkdir -p $CHECKPOINT_DIR
 mkdir -p slurm_logs
-set -x
-
-# ******************* These are read internally it seems ***********************************
-# ******** Master port, address and world size MUST be passed as variables for DDP to work
-MAIN_ADDR=$(scontrol show hostnames "${SLURM_JOB_NODELIST}" | head -n 1)
-export MAIN_ADDR
-# ******************************************************************************************
 
 echo "In ObjectNav OFFNAV"
 srun python -u -m run \
