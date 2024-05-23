@@ -9,10 +9,12 @@ else
     num_gpus=${#ADDR[@]}
     echo "Number of GPUs: $num_gpus"
 fi
+num_cpus=$(nproc)
 
 export GLOG_minloglevel=2
 export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
+export OMP_NUM_THREADS=$((num_cpus/num_gpus))
 
 setup="full"
 exp_name="cyclic_lr_navrl"
