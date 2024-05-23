@@ -3,14 +3,8 @@
 # shellcheck disable=SC1090
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate habitat
-torchrun \
-  --nnodes $NNODES \
-  --nproc_per_node $NPERNODE \
-  --max_restarts 3 \
-  --rdzv-id=$JOB_ID \
-  --rdzv-backend=c10d \
-  --rdzv-endpoint=$MASTER_ADDR:$MASTER_PORT \
-  run.py \
+
+python run.py \
     --exp-config $config \
     --run-type train \
     TENSORBOARD_DIR $TENSORBOARD_DIR \

@@ -51,7 +51,6 @@ from torch.optim.lr_scheduler import LambdaLR
 
 from offnav.algos.agent import DDPILAgent
 from offnav.common.rollout_storage import ILRolloutStorage
-from offnav.utils.utils import write_dataset
 
 
 @baseline_registry.register_trainer(name="pirlnav-il")
@@ -469,7 +468,6 @@ class ILEnvDDPTrainer(PPOTrainer):
 
             self.envs.close()
 
-        self.data_writer.write_dataset('habitat_small.hdf5')
 
     @rank0_only
     def _training_log(
@@ -556,6 +554,7 @@ class ILEnvDDPTrainer(PPOTrainer):
         Returns:
             None
         """
+        self._is_distributed = False
         if self._is_distributed:
             raise RuntimeError("Evaluation does not support distributed mode")
 

@@ -15,7 +15,7 @@ TRAINER_NAME: "offnav"
 SENSORS: ["RGB_SENSOR"]
 NUM_UPDATES: 500
 LOG_INTERVAL: 10
-NUM_CHECKPOINTS: 500
+NUM_CHECKPOINTS: 20
 # Force PyTorch to be single threaded as
 # this improves performance considerably
 FORCE_TORCH_SINGLE_THREADED: True
@@ -57,5 +57,5 @@ POLICY:
   CRITIC:
     no_critic: True
   RGB_ENCODER:
-    backbone: resnet18
-    # pretrained_encoder: "data/visual_encoders/omnidata_DINO_02.pth"
+    backbone: resnet50
+    pretrained_encoder: "data/visual_encoders/omnidata_DINO_02.pth"

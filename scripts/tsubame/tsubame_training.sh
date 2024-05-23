@@ -1,10 +1,10 @@
 #!/bin/sh
 #$ -cwd
-#$ -l node_q=64
+#$ -l gpu_1=32
 #$ -j y
-#$ -l h_rt=24:00:00
+#$ -l h_rt=00:10:00
 #$ -o slurm_logs/$JOB_NAME_$JOB_ID.out
-#$ -N tsubame_cyclic_lr
+#$ -N pruebas_creditos_coste_gpu_1
 
 # ******************* Setup dirs ***********************************
 setup="full"
@@ -25,6 +25,7 @@ export CHECKPOINT_DIR
 export GLOG_minloglevel=2
 export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
+
 # ******************* Setup openmpi *******************************
 module load openmpi/5.0.2-nvhpc
 # Get number of GPUs
@@ -54,9 +55,13 @@ echo "In ObjectNav OFFNAV"
 mpirun \
   -np $NP \
   -npernode $NPERNODE \
+  -x LD_LIBRARY_PATH \
+  -bind-to none \
+  -mca pml ob1 \
+  -mca btl ^openib \
     apptainer exec --nv \
       --bind /gs/fs/tga-aklab/data \
       --bind /gs/fs/tga-aklab/carlos/repositorios \
       --bind /gs/fs/tga-aklab/carlos/miniconda3 \
       apptainer/offnav.sif \
-      bash scripts/train_multi_node.sh
+      bash scripts/tsubame/train_multi_node.sh

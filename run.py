@@ -13,7 +13,7 @@ from habitat_baselines.rl.ddppo.ddp_utils import rank0_only
 from habitat import logger
 from habitat.config import Config
 from habitat_baselines.common.baseline_registry import baseline_registry
-# from torch.distributed.elastic.multiprocessing.errors import record
+from torch.distributed.elastic.multiprocessing.errors import record
 
 from offnav.config import get_config
 import socket
@@ -30,7 +30,7 @@ def get_active_branch_name():
             return line.partition("refs/heads/")[2]
 
 
-#  @record
+@record
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(

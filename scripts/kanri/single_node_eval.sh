@@ -1,7 +1,7 @@
 #!/bin/bash
 #AKBATCH -r golem_1
 #SBATCH -N 1
-#SBATCH -J default_cyclic_lr_resnet18
+#SBATCH -J pirlnav_resnet18_setup5
 #SBATCH --output=slurm_logs/%x-%j.out
 
 # shellcheck disable=SC1090
@@ -12,12 +12,12 @@ export GLOG_minloglevel=2
 export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
 
-setup="setup3"
-exp_name="default_cyclic_lr_resnet18"
-config="configs/experiments/off_objectnav.yaml"
+setup="setup5"
+exp_name="pirlnav_resnet18"
+config="configs/experiments/il_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_${setup}"
 TENSORBOARD_DIR="tb/${exp_name}_${setup}"
-CHECKPOINT_DIR="data/checkpoints/offnav/${exp_name}_${setup}"
+CHECKPOINT_DIR="data/checkpoints/offnav/${exp_name}_setup4"
 
 echo "In ObjectNav IL DDP"
 python -u -m run \

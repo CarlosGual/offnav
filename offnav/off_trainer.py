@@ -32,7 +32,7 @@ from habitat_baselines.rl.ddppo.ddp_utils import (
     EXIT,
     add_signal_handlers,
     init_distrib_slurm,
-    # init_distrib_tsubame,
+    init_distrib_tsubame,
     is_slurm_batch_job,
     load_resume_state,
     rank0_only,
@@ -121,7 +121,7 @@ class OffEnvDDTrainer(PPOTrainer):
         self.config.freeze()
 
         if self._is_distributed:
-            local_rank, tcp_store = init_distrib_slurm(
+            local_rank, tcp_store = init_distrib_tsubame(
                 self.config.RL.DDPPO.distrib_backend
             )
             if rank0_only():
