@@ -2,9 +2,9 @@
 #$ -cwd
 #$ -l gpu_1=32
 #$ -j y
-#$ -l h_rt=00:10:00
+#$ -l h_rt=24:00:00
 #$ -o slurm_logs/$JOB_NAME_$JOB_ID.out
-#$ -N pruebas_creditos_coste_gpu_1
+#$ -N training_offnav_32
 
 # ******************* Setup dirs ***********************************
 setup="full"

@@ -254,6 +254,7 @@ class OffEnvDDTrainer(PPOTrainer):
         self.env_time = 0.0
         self.pth_time = 0.0
         self.t_start = time.time()
+        return resume_state
 
     def _compute_actions_and_step_envs(self, buffer_index: int = 0):
         num_envs = self.envs.num_envs
@@ -512,7 +513,7 @@ class OffEnvDDTrainer(PPOTrainer):
             None
         """
 
-        self._init_train()
+        resume_state = self._init_train()
         if self._profiler is not None:
             self._profiler.start()
         count_checkpoints = 0
@@ -549,7 +550,7 @@ class OffEnvDDTrainer(PPOTrainer):
             step_size_up=off_cfg.CYCLIC_LR.step_size_up
         )
 
-        resume_state = load_resume_state(self.config)
+        # resume_state = load_resume_state(self.config)
         if resume_state is not None:
             logger.info('Resuming state...')
             self.agent.load_state_dict(resume_state["state_dict"])
@@ -587,8 +588,6 @@ class OffEnvDDTrainer(PPOTrainer):
             new_state_dict = adapt_state_dict(prev_checkpoint['state_dict'], module_names)
             logger.info(f'Loading adapted state dict into actor critic')
             self.agent.load_state_dict(new_state_dict, strict=False)
-
-
 
         with (
                 get_writer(self.config, flush_secs=self.flush_secs)

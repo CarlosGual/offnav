@@ -95,6 +95,7 @@ _CONFIG.VIDEO_OPTION = []
 _CONFIG.VIDEO_DIR = "data/video"
 _CONFIG.TENSORBOARD_DIR = "data/tensorboard"
 _CONFIG.WANDB_ENABLED = False
+_CONFIG.WANDB_UNIQUE_ID = None
 _CONFIG.EVAL_CKPT_PATH_DIR = "data/checkpoints"
 _CONFIG.CHECKPOINT_FOLDER = "data/checkpoints"
 _CONFIG.LOG_FILE = "data/train.log"

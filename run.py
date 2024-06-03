@@ -20,10 +20,11 @@ import socket
 
 from pathlib import Path
 
-def get_active_branch_name():
 
+def get_active_branch_name():
     head_dir = Path(".") / ".git" / "HEAD"
-    with head_dir.open("r") as f: content = f.read().splitlines()
+    with head_dir.open("r") as f:
+        content = f.read().splitlines()
 
     for line in content:
         if line[0:4] == "ref:":
@@ -102,6 +103,11 @@ def run_exp(exp_config: str, run_type: str, opts=None) -> None:
     """
 
     config = get_config(exp_config, opts)
+    if config.WANDB_UNIQUE_ID is None:
+        config.defrost()
+        # if we're going to restart the experiment, this will be saved to a json file
+        config.WANDB_UNIQUE_ID = f'{run_type}-{config.TENSORBOARD_DIR.split("/")[-1]}_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}'
+        config.freeze()
 
     if config.WANDB_ENABLED:
         if os.environ.get("LOCAL_RANK", None) is not None:
@@ -121,7 +127,9 @@ def run_exp(exp_config: str, run_type: str, opts=None) -> None:
                        sync_tensorboard=True,
                        config=config,
                        entity='gram-uah',
-                       tags=[f'{run_type}', 'kanri'])
+                       tags=[f'{run_type}', 'kanri'],
+                       id=config.WANDB_UNIQUE_ID,
+                       resume="allow")
     execute_exp(config, run_type)
 
 
