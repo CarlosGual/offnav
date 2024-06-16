@@ -26,8 +26,9 @@ IL:
   POLICY:
     name: "ObjectNavILMAEPolicy"
   BehavioralCloning:
-    encoder_lr: 0.00003
-    lr: 0.00003
+    encoder_lr: 0.0001
+    lr: 0.0001
+    num_mini_batch: 8
 
 RL:
   SUCCESS_REWARD: 2.5
@@ -40,4 +41,5 @@ POLICY:
   CRITIC:
     no_critic: True
   RGB_ENCODER:
-    backbone: resnet18
+    backbone: resnet50
+    pretrained_encoder: "data/visual_encoders/omnidata_DINO_02.pth"

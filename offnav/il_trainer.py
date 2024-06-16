@@ -29,7 +29,7 @@ from habitat_baselines.common.tensorboard_utils import TensorboardWriter, get_wr
 from habitat_baselines.rl.ddppo.ddp_utils import (
     EXIT,
     add_signal_handlers,
-    init_distrib_slurm,
+    init_distrib_tsubame,
     is_slurm_batch_job,
     load_resume_state,
     rank0_only,
@@ -97,7 +97,14 @@ class ILEnvDDPTrainer(PPOTrainer):
     def _init_train(self):
         resume_state = load_resume_state(self.config)
         if resume_state is not None:
-            self.config: Config = resume_state["config"]
+            if self.config.OVERWRITE_NUM_UPDATES:
+                num_updates = self.config.NUM_UPDATES
+                self.config: Config = resume_state["config"]
+                self.config.defrost()
+                self.config.NUM_UPDATES = num_updates
+                self.config.freeze()
+            else:
+                self.config: Config = resume_state["config"]
 
         if self.config.RL.DDPPO.force_distributed:
             self._is_distributed = True
@@ -113,7 +120,7 @@ class ILEnvDDPTrainer(PPOTrainer):
         self.config.freeze()
 
         if self._is_distributed:
-            local_rank, tcp_store = init_distrib_slurm(
+            local_rank, tcp_store = init_distrib_tsubame(
                 self.config.RL.DDPPO.distrib_backend
             )
             if rank0_only():
@@ -237,6 +244,7 @@ class ILEnvDDPTrainer(PPOTrainer):
         self.env_time = 0.0
         self.pth_time = 0.0
         self.t_start = time.time()
+        return resume_state
 
     def _compute_actions_and_step_envs(self, buffer_index: int = 0):
         num_envs = self.envs.num_envs
@@ -314,7 +322,7 @@ class ILEnvDDPTrainer(PPOTrainer):
             None
         """
 
-        self._init_train()
+        resume_state = self._init_train()
 
         count_checkpoints = 0
         prev_time = 0
@@ -324,7 +332,7 @@ class ILEnvDDPTrainer(PPOTrainer):
             lr_lambda=lambda x: 1 - self.percent_done(),
         )
 
-        resume_state = load_resume_state(self.config)
+        # resume_state = load_resume_state(self.config)
         if resume_state is not None:
             self.agent.load_state_dict(resume_state["state_dict"])
             self.agent.optimizer.load_state_dict(resume_state["optim_state"])

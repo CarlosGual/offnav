@@ -9,10 +9,10 @@ python run.py \
     --run-type train \
     TENSORBOARD_DIR $TENSORBOARD_DIR \
     CHECKPOINT_FOLDER $CHECKPOINT_DIR \
-    NUM_UPDATES 50000 \
+    NUM_UPDATES 100000 \
     WANDB_ENABLED True \
-    NUM_ENVIRONMENTS 8 \
-    OFFLINE.IQL.num_mini_batch 2 \
+    NUM_ENVIRONMENTS 32 \
+    OFFLINE.IQL.num_mini_batch 8 \
     RL.DDPPO.force_distributed True \
     RL.DDPPO.distrib_backend 'NCCL' \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz"

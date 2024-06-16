@@ -1,22 +1,23 @@
 #!/bin/sh
 #$ -cwd
-#$ -l gpu_1=32
+#$ -l node_f=2
 #$ -j y
 #$ -l h_rt=24:00:00
-#$ -o slurm_logs/$JOB_NAME_$JOB_ID.out
-#$ -N training_offnav_32
+#$ -o slurm_logs/$JOB_NAME_$JOB_ID/log.out
+#$ -N pirlnav
 
 # ******************* Setup dirs ***********************************
 setup="full"
 # Define paths
-config="configs/experiments/off_objectnav.yaml"
+config="configs/experiments/il_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_${setup}"
 TENSORBOARD_DIR="tb/${JOB_NAME}_${setup}"
 CHECKPOINT_DIR="data/checkpoints/offnav/${JOB_NAME}_${setup}"
+LOG_DIR="slurm_logs/${JOB_NAME}_${JOB_ID}"
 
 mkdir -p $TENSORBOARD_DIR
 mkdir -p $CHECKPOINT_DIR
-mkdir -p slurm_logs
+mkdir -p "$LOG_DIR"
 
 export config
 export DATA_PATH
@@ -27,7 +28,7 @@ export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
 
 # ******************* Setup openmpi *******************************
-module load openmpi/5.0.2-nvhpc
+module load openmpi/5.0.2-intel
 # Get number of GPUs
 if [ -z "$NVIDIA_VISIBLE_DEVICES" ]
 then
@@ -49,6 +50,11 @@ echo NPERNODE=$NPERNODE
 echo NP=$NP
 echo MASTERADDR=$MASTER_ADDR
 echo MASTERPORT=$MASTER_PORT
+
+# Set nvidia-smi to log GPU usage
+nvidia-smi --query-gpu=timestamp,name,gpu_bus_id,utilization.gpu,utilization.memory,memory.used,memory.free \
+    --format=csv -l 1 > "${LOG_DIR}"/gpu-usage.log &
+NVIDIA_SMI_PID=$!
 # ******************************************************************
 
 echo "In ObjectNav OFFNAV"
@@ -65,3 +71,5 @@ mpirun \
       --bind /gs/fs/tga-aklab/carlos/miniconda3 \
       apptainer/offnav.sif \
       bash scripts/tsubame/train_multi_node.sh
+
+kill $NVIDIA_SMI_PID

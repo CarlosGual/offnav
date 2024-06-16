@@ -105,7 +105,14 @@ class OffEnvDDTrainer(PPOTrainer):
     def _init_train(self):
         resume_state = load_resume_state(self.config)
         if resume_state is not None:
-            self.config: Config = resume_state["config"]
+            if self.config.OVERWRITE_NUM_UPDATES:
+                num_updates = self.config.NUM_UPDATES
+                self.config: Config = resume_state["config"]
+                self.config.defrost()
+                self.config.NUM_UPDATES = num_updates
+                self.config.freeze()
+            else:
+                self.config: Config = resume_state["config"]
 
         if self.config.RL.DDPPO.force_distributed:
             self._is_distributed = True

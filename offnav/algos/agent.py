@@ -540,7 +540,9 @@ class IQLRNNAgent(nn.Module):
             """
             if num_steps_done % self.q_update_period == 0:
                 self.qf1_optimizer.zero_grad()
+                self.before_backward(qf1_loss)
                 qf1_loss.backward()
+                self.after_backward(qf1_loss)
                 self.qf1_optimizer.step()
 
                 # self.qf2_optimizer.zero_grad()
@@ -548,12 +550,16 @@ class IQLRNNAgent(nn.Module):
                 # self.qf2_optimizer.step()
 
                 self.vf_optimizer.zero_grad()
+                self.before_backward(vf_loss)
                 vf_loss.backward()
+                self.before_backward(vf_loss)
                 self.vf_optimizer.step()
 
             if num_steps_done % self.policy_update_period == 0:
                 self.policy_optimizer.zero_grad()
+                self.before_backward(policy_loss)
                 policy_loss.backward()
+                self.after_backward(policy_loss)
                 self.policy_optimizer.step()
 
             """
