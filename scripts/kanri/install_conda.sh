@@ -1,5 +1,5 @@
 # Set up conda
-source ~/miniconda3/etc/profile.d/conda.sh
+source ~/miniforge3/etc/profile.d/conda.sh
 
 # Create a conda environment
 conda create -n habitat python=3.8 cmake=3.14.0 -y

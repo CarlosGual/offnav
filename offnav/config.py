@@ -179,6 +179,20 @@ _CONFIG.OFFLINE.IQL.CYCLIC_LR.multiplication_factor = 10.0
 _CONFIG.OFFLINE.IQL.CYCLIC_LR.step_size_up = 2000
 
 ##############################################
+# META config
+##############################################
+
+_CONFIG.META = CN()
+_CONFIG.META.POLICY = CN()
+_CONFIG.META.POLICY.name = "ObjectNavIQLPolicy"
+_CONFIG.META.POLICY.USE_IW = True
+_CONFIG.META.POLICY.distrib_backend = "NCCL"
+_CONFIG.META.MIL = CN()
+_CONFIG.META.MIL.num_tasks = 1
+_CONFIG.META.METAITERATOR = CN()
+
+
+##############################################
 # Policy config
 ##############################################
 

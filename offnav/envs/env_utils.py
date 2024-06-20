@@ -9,7 +9,9 @@ import random
 from typing import Any, List, Type, Union
 
 import habitat
+import offnav
 from habitat import Config, Env, RLEnv, VectorEnv, logger, make_dataset
+from offnav.envs.meta_vector_env import MetaVectorEnv, MetaThreadedVectorEnv
 
 
 def make_env_fn(
@@ -27,18 +29,22 @@ def make_env_fn(
         env object created according to specification.
     """
     if "TASK_CONFIG" in config:
+        meta = config.META
         config = config.TASK_CONFIG
+        config.defrost()
+        config.META = meta
+        config.freeze()
     dataset = make_dataset(config.DATASET.TYPE, config=config.DATASET)
     env = env_class(config=config, dataset=dataset)
     env.seed(config.SEED)
     return env
 
 
-def construct_envs(
+def construct_meta_envs(
     config: Config,
     env_class: Union[Type[Env], Type[RLEnv]],
     workers_ignore_signals: bool = False,
-) -> VectorEnv:
+) -> MetaVectorEnv:
     r"""Create VectorEnv object with specified config and env class type.
     To allow better performance, dataset are split into small ones for
     each individual env, grouped by scenes.
@@ -48,7 +54,7 @@ def construct_envs(
     :param env_class: class type of the envs to be created.
     :param workers_ignore_signals: Passed to :ref:`habitat.VectorEnv`'s constructor
 
-    :return: VectorEnv object created according to specification.
+    :return: MetaVectorEnv object created according to specification.
     """
 
     num_environments = config.NUM_ENVIRONMENTS
@@ -106,9 +112,9 @@ def construct_envs(
         logger.warn(
             "Using the debug Vector environment interface. Expect slower performance."
         )
-        vector_env_cls = habitat.ThreadedVectorEnv
+        vector_env_cls = MetaThreadedVectorEnv
     else:
-        vector_env_cls = habitat.VectorEnv
+        vector_env_cls = MetaVectorEnv
 
     envs = vector_env_cls(
         make_env_fn=make_env_fn,

@@ -1,0 +1,45 @@
+BASE_TASK_CONFIG_PATH: "configs/tasks/objectnav_hm3d.yaml"
+CMD_TRAILING_OPTS: ["TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.MAX_SCENE_REPEAT_STEPS", "50000"]
+ENV_NAME: "SimpleMetaRLEnv"
+SIMULATOR_GPU_ID: 0
+TORCH_GPU_ID: 0
+VIDEO_OPTION: []
+TENSORBOARD_DIR: "pruebas"
+VIDEO_DIR: "video_dir"
+TEST_EPISODE_COUNT: -1
+EVAL_CKPT_PATH_DIR: "data/new_checkpoints_dgx_lowerlr_3e-5"
+NUM_ENVIRONMENTS: 2
+CHECKPOINT_FOLDER: "data/checkpoints/pruebas"
+TRAINER_NAME: "pirlnav-mil"
+SENSORS: ["RGB_SENSOR"]
+NUM_UPDATES: 10000
+LOG_INTERVAL: 10
+NUM_CHECKPOINTS: 20
+# Force PyTorch to be single threaded as
+# this improves performance considerably
+FORCE_TORCH_SINGLE_THREADED: True
+
+EVAL:
+  SPLIT: "val"
+
+IL:
+  POLICY:
+    name: "ObjectNavILMAEPolicy"
+  BehavioralCloning:
+    encoder_lr: 0.0001
+    lr: 0.0001
+    num_mini_batch: 8
+
+RL:
+  SUCCESS_REWARD: 2.5
+  SLACK_REWARD: -1e-3
+  DDPPO:
+    force_distributed: True
+    pretrained: False
+
+POLICY:
+  CRITIC:
+    no_critic: True
+  RGB_ENCODER:
+    backbone: resnet18
+#    pretrained_encoder: "data/visual_encoders/omnidata_DINO_02.pth"

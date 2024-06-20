@@ -34,7 +34,7 @@ from habitat_baselines.rl.ddppo.ddp_utils import (
     load_resume_state,
     rank0_only,
     requeue_job,
-    save_resume_state,
+    save_resume_state, is_tsubame_batch_job,
 )
 from habitat_baselines.rl.ppo.ppo_trainer import PPOTrainer
 from habitat_baselines.utils.common import (
@@ -51,13 +51,14 @@ from torch.optim.lr_scheduler import LambdaLR
 
 from offnav.algos.agent import DDPILAgent
 from offnav.common.rollout_storage import ILRolloutStorage
-from offnav.envs.env_utils import construct_envs
+from offnav.envs.env_utils import construct_meta_envs
 from habitat.core.environments import get_env_class
-
+from offnav.envs.meta_vector_env import MetaVectorEnv
 
 
 @baseline_registry.register_trainer(name="pirlnav-mil")
 class MILEnvDDPTrainer(PPOTrainer):
+    envs: MetaVectorEnv
     def __init__(self, config=None):
         super().__init__(config)
 
@@ -65,10 +66,10 @@ class MILEnvDDPTrainer(PPOTrainer):
         if config is None:
             config = self.config
 
-        self.envs = construct_envs(
+        self.envs = construct_meta_envs(
             config,
             get_env_class(config.ENV_NAME),
-            workers_ignore_signals=is_slurm_batch_job(),
+            workers_ignore_signals=is_tsubame_batch_job(),
         )
 
     def _setup_actor_critic_agent(self, il_cfg: Config) -> None:
@@ -106,6 +107,11 @@ class MILEnvDDPTrainer(PPOTrainer):
             wd=il_cfg.wd,
             entropy_coef=il_cfg.entropy_coef,
         )
+
+    def init_tasks(self):
+        tasks = self.envs.sample_tasks(self.config.META.MIL.num_tasks)
+        for index_env in range(self.envs.num_envs):
+            self.envs.set_task_at(index_env, tasks[index_env][0])
 
     def _init_train(self):
         resume_state = load_resume_state(self.config)
@@ -148,7 +154,7 @@ class MILEnvDDPTrainer(PPOTrainer):
             self.config.SIMULATOR_GPU_ID = local_rank
             # Multiply by the number of simulators to make sure they also get unique seeds
             self.config.TASK_CONFIG.SEED += (
-                torch.distributed.get_rank() * self.config.NUM_ENVIRONMENTS
+                    torch.distributed.get_rank() * self.config.NUM_ENVIRONMENTS
             )
             self.config.freeze()
 
@@ -233,6 +239,7 @@ class MILEnvDDPTrainer(PPOTrainer):
         )
         self.rollouts.to(self.device)
 
+        self.init_tasks()
         observations = self.envs.reset()
         batch = batch_obs(
             observations, device=self.device, cache=self._obs_batching_cache
@@ -289,7 +296,7 @@ class MILEnvDDPTrainer(PPOTrainer):
         t_step_env = time.time()
 
         for index_env, act in zip(
-            range(env_slice.start, env_slice.stop), actions.unbind(0)
+                range(env_slice.start, env_slice.stop), actions.unbind(0)
         ):
             if act.shape[0] > 1:
                 step_action = action_array_to_dict(
@@ -326,6 +333,76 @@ class MILEnvDDPTrainer(PPOTrainer):
             action_loss,
             dist_entropy,
         )
+
+    def _make_inner_rollouts(self, il_cfg: Config):
+        count_steps_delta = 0
+        profiling_wrapper.range_push("inner rollouts loop")
+        profiling_wrapper.range_push("_collect_rollout_step")
+
+        for buffer_index in range(self._nbuffers):
+            self._compute_actions_and_step_envs(buffer_index)
+
+        for step in range(il_cfg.num_steps):
+            is_last_step = (
+                    self.should_end_early(step + 1)
+                    or (step + 1) == il_cfg.num_steps
+            )
+
+            for buffer_index in range(self._nbuffers):
+                count_steps_delta += self._collect_environment_result(
+                    buffer_index
+                )
+
+                if (buffer_index + 1) == self._nbuffers:
+                    profiling_wrapper.range_pop()  # _collect_rollout_step
+
+                if not is_last_step:
+                    if (buffer_index + 1) == self._nbuffers:
+                        profiling_wrapper.range_push(
+                            "_collect_rollout_step"
+                        )
+
+                    self._compute_actions_and_step_envs(buffer_index)
+
+            if is_last_step:
+                break
+
+            profiling_wrapper.range_pop()  # rollouts loop
+
+    def _make_outer_rollouts(self, il_cfg: Config):
+        count_steps_delta = 0
+        profiling_wrapper.range_push("outer rollouts loop")
+        profiling_wrapper.range_push("_collect_rollout_step")
+
+        for buffer_index in range(self._nbuffers):
+            self._compute_actions_and_step_envs(buffer_index)
+
+        for step in range(il_cfg.num_steps):
+            is_last_step = (
+                    self.should_end_early(step + 1)
+                    or (step + 1) == il_cfg.num_steps
+            )
+
+            for buffer_index in range(self._nbuffers):
+                count_steps_delta += self._collect_environment_result(
+                    buffer_index
+                )
+
+                if (buffer_index + 1) == self._nbuffers:
+                    profiling_wrapper.range_pop()  # _collect_rollout_step
+
+                if not is_last_step:
+                    if (buffer_index + 1) == self._nbuffers:
+                        profiling_wrapper.range_push(
+                            "_collect_rollout_step"
+                        )
+
+                    self._compute_actions_and_step_envs(buffer_index)
+
+            if is_last_step:
+                break
+
+            profiling_wrapper.range_pop()  # rollouts loop
 
     @profiling_wrapper.RangeContext("train")
     def train(self) -> None:
@@ -367,13 +444,12 @@ class MILEnvDDPTrainer(PPOTrainer):
                 requeue_stats["window_episode_stats"]
             )
 
-        ppo_cfg = self.config.RL.PPO
         il_cfg = self.config.IL.BehaviorCloning
 
         with (
-            get_writer(self.config, flush_secs=self.flush_secs)
-            if rank0_only()
-            else contextlib.suppress()
+                get_writer(self.config, flush_secs=self.flush_secs)
+                if rank0_only()
+                else contextlib.suppress()
         ) as writer:
             while not self.is_done():
                 profiling_wrapper.on_start_step()
@@ -381,7 +457,7 @@ class MILEnvDDPTrainer(PPOTrainer):
 
                 if il_cfg.use_linear_clip_decay:
                     self.agent.clip_param = il_cfg.clip_param * (
-                        1 - self.percent_done()
+                            1 - self.percent_done()
                     )
 
                 if rank0_only() and self._should_save_resume_state():
@@ -419,41 +495,22 @@ class MILEnvDDPTrainer(PPOTrainer):
 
                 self.agent.eval()
                 count_steps_delta = 0
-                profiling_wrapper.range_push("rollouts loop")
 
-                profiling_wrapper.range_push("_collect_rollout_step")
-                for buffer_index in range(self._nbuffers):
-                    self._compute_actions_and_step_envs(buffer_index)
-
-                for step in range(il_cfg.num_steps):
-                    is_last_step = (
-                        self.should_end_early(step + 1)
-                        or (step + 1) == il_cfg.num_steps
-                    )
-
-                    for buffer_index in range(self._nbuffers):
-                        count_steps_delta += self._collect_environment_result(
-                            buffer_index
-                        )
-
-                        if (buffer_index + 1) == self._nbuffers:
-                            profiling_wrapper.range_pop()  # _collect_rollout_step
-
-                        if not is_last_step:
-                            if (buffer_index + 1) == self._nbuffers:
-                                profiling_wrapper.range_push(
-                                    "_collect_rollout_step"
-                                )
-
-                            self._compute_actions_and_step_envs(buffer_index)
-
-                    if is_last_step:
-                        break
-
-                profiling_wrapper.range_pop()  # rollouts loop
+                self._make_inner_rollouts(il_cfg)
+                self._make_outer_rollouts(il_cfg)
 
                 if self._is_distributed:
                     self.num_rollouts_done_store.add("num_done", 1)
+
+                for i, episode in enumerate(self.envs.current_episodes()):
+                    logger.info(
+                        "Environment: {}, Current scene: {}, Current goal {}, Current task_id {}, episode: {}".format(
+                            i,
+                            episode.scene_id.split(".")[-3].split("/")[-1],
+                            episode.object_category,
+                            episode.goals_key,
+                            episode.episode_id)
+                        )
 
                 (
                     action_loss,
@@ -489,10 +546,9 @@ class MILEnvDDPTrainer(PPOTrainer):
 
             self.envs.close()
 
-
     @rank0_only
     def _training_log(
-        self, writer, losses: Dict[str, float], prev_time: int = 0
+            self, writer, losses: Dict[str, float], prev_time: int = 0
     ):
         deltas = {
             k: (
@@ -560,10 +616,10 @@ class MILEnvDDPTrainer(PPOTrainer):
             )
 
     def _eval_checkpoint(
-        self,
-        checkpoint_path: str,
-        writer: TensorboardWriter,
-        checkpoint_index: int = 0,
+            self,
+            checkpoint_path: str,
+            writer: TensorboardWriter,
+            checkpoint_index: int = 0,
     ) -> None:
         r"""Evaluates a single checkpoint.
 
@@ -597,8 +653,8 @@ class MILEnvDDPTrainer(PPOTrainer):
         config.freeze()
 
         if (
-            len(self.config.VIDEO_OPTION) > 0
-            and self.config.VIDEO_RENDER_TOP_DOWN
+                len(self.config.VIDEO_OPTION) > 0
+                and self.config.VIDEO_RENDER_TOP_DOWN
         ):
             config.defrost()
             config.TASK_CONFIG.TASK.MEASUREMENTS.append("TOP_DOWN_MAP")
@@ -694,8 +750,8 @@ class MILEnvDDPTrainer(PPOTrainer):
         logger.info("Sampling actions deterministically...")
         self.actor_critic.eval()
         while (
-            len(stats_episodes) < number_of_eval_episodes
-            and self.envs.num_envs > 0
+                len(stats_episodes) < number_of_eval_episodes
+                and self.envs.num_envs > 0
         ):
             current_episodes = self.envs.current_episodes()
 
@@ -752,8 +808,8 @@ class MILEnvDDPTrainer(PPOTrainer):
             n_envs = self.envs.num_envs
             for i in range(n_envs):
                 if (
-                    next_episodes[i].scene_id,
-                    next_episodes[i].episode_id,
+                        next_episodes[i].scene_id,
+                        next_episodes[i].episode_id,
                 ) in stats_episodes:
                     envs_to_pause.append(i)
 
@@ -825,8 +881,8 @@ class MILEnvDDPTrainer(PPOTrainer):
         aggregated_stats = {}
         for stat_key in next(iter(stats_episodes.values())).keys():
             aggregated_stats[stat_key] = (
-                sum(v[stat_key] for v in stats_episodes.values())
-                / num_episodes
+                    sum(v[stat_key] for v in stats_episodes.values())
+                    / num_episodes
             )
 
         for k, v in aggregated_stats.items():

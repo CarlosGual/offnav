@@ -6,9 +6,22 @@
 
 import json
 import os
-from typing import Any, Dict, List, Optional, Sequence
+import random
+import numpy as np
+from numpy import ndarray
+from itertools import groupby
+from typing import (
+    Any,
+    Dict,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Union, Tuple,
+)
 
 from habitat.config import Config
+from habitat.core.dataset import Episode, T
 from habitat.core.registry import registry
 from habitat.core.simulator import AgentState, ShortestPathPoint
 from habitat.core.utils import DatasetFloatJSONEncoder
@@ -30,7 +43,8 @@ class ObjectNavDatasetV2(PointNavDatasetV1):
     episodes: List[ObjectGoalNavEpisode] = []  # type: ignore
     content_scenes_path: str = "{data_path}/content/{scene}.json.gz"
     goals_by_category: Dict[str, Sequence[ObjectGoal]]
-    gibson_to_mp3d_category_map: Dict[str, str] = {'couch': 'sofa', 'toilet': 'toilet', 'bed': 'bed', 'tv': 'tv_monitor', 'potted plant': 'plant', 'chair': 'chair'}
+    gibson_to_mp3d_category_map: Dict[str, str] = {'couch': 'sofa', 'toilet': 'toilet', 'bed': 'bed',
+                                                   'tv': 'tv_monitor', 'potted plant': 'plant', 'chair': 'chair'}
     max_episode_steps: int = 500
 
     @staticmethod
@@ -76,6 +90,20 @@ class ObjectNavDatasetV2(PointNavDatasetV1):
         super().__init__(config)
         self.episodes = list(self.episodes)
 
+    def get_episode_iterator(self, *args: Any, **kwargs: Any) -> Iterator[T]:
+        r"""Gets episode iterator with options. Options are specified in
+        :ref:`EpisodeIterator` documentation.
+
+        :param args: positional args for iterator constructor
+        :param kwargs: keyword args for iterator constructor
+        :return: episode iterator with specified behavior
+
+        To further customize iterator behavior for your :ref:`Dataset`
+        subclass, create a customized iterator class like
+        :ref:`EpisodeIterator` and override this method.
+        """
+        return MetaEpisodeIterator(self.episodes, *args, **kwargs)
+
     @staticmethod
     def __deserialize_goal(serialized_goal: Dict[str, Any]) -> ObjectGoal:
         g = ObjectGoal(**serialized_goal)
@@ -88,7 +116,7 @@ class ObjectNavDatasetV2(PointNavDatasetV1):
         return g
 
     def from_json(
-        self, json_str: str, scenes_dir: Optional[str] = None
+            self, json_str: str, scenes_dir: Optional[str] = None
     ) -> None:
         deserialized = json.loads(json_str)
         if CONTENT_SCENES_PATH_FIELD in deserialized:
@@ -132,7 +160,7 @@ class ObjectNavDatasetV2(PointNavDatasetV1):
 
             if "scene_state" in episode:
                 del episode["scene_state"]
-            
+
             if "gibson" in episode["scene_id"]:
                 episode["scene_id"] = "gibson_semantic/{}".format(episode["scene_id"].split("/")[-1])
 
@@ -144,8 +172,8 @@ class ObjectNavDatasetV2(PointNavDatasetV1):
             if scenes_dir is not None:
                 if episode.scene_id.startswith(DEFAULT_SCENE_PATH_PREFIX):
                     episode.scene_id = episode.scene_id[
-                        len(DEFAULT_SCENE_PATH_PREFIX) :
-                    ]
+                                       len(DEFAULT_SCENE_PATH_PREFIX):
+                                       ]
 
                 episode.scene_id = os.path.join(scenes_dir, episode.scene_id)
 
@@ -169,9 +197,143 @@ class ObjectNavDatasetV2(PointNavDatasetV1):
                             }
 
                         path[p_index] = ShortestPathPoint(**point)
-            
+
             if episode.reference_replay is not None and len(episode.reference_replay) > self.max_episode_steps:
                 continue
 
             self.episodes.append(episode)  # type: ignore [attr-defined]
+
+
+class MetaEpisodeIterator(Iterator[T]):
+    r"""Episode Iterator class that gives options for how a list of episodes
+    should be iterated.
+
+    Some of those options are desirable for the internal simulator to get
+    higher performance. More context: simulator suffers overhead when switching
+    between scenes, therefore episodes of the same scene should be loaded
+    consecutively. However, if too many consecutive episodes from same scene
+    are feed into RL model, the model will risk to overfit that scene.
+    Therefore it's better to load same scene consecutively and switch once a
+    number threshold is reached.
+
+    Currently supports the following features:
+
+    Cycling:
+        when all episodes are iterated, cycle back to start instead of throwing
+        StopIteration.
+    Cycling with shuffle:
+        when cycling back, shuffle episodes groups grouped by scene.
+    Group by scene:
+        episodes of same scene will be grouped and loaded consecutively.
+    Set max scene repeat:
+        set a number threshold on how many episodes from the same scene can be
+        loaded consecutively.
+    Sample episodes:
+        sample the specified number of episodes.
+    """
+
+    def __init__(
+            self,
+            episodes: Sequence[T],
+            cycle: bool = True,
+            shuffle: bool = True,
+            seed: int = None,
+    ) -> None:
+        r"""..
+
+        :param episodes: list of episodes.
+        :param cycle: if :py:`True`, cycle back to first episodes when
+            StopIteration.
+        :param shuffle: if :py:`True`, shuffle scene groups when cycle. No
+            effect if cycle is set to :py:`False`. Will shuffle grouped scenes
+            if :p:`group_by_scene` is :py:`True`.
+        :param group_by_scene: if :py:`True`, group episodes from same scene.
+        :param max_scene_repeat_episodes: threshold of how many episodes from the same
+            scene can be loaded consecutively. :py:`-1` for no limit
+        :param max_scene_repeat_steps: threshold of how many steps from the same
+            scene can be taken consecutively. :py:`-1` for no limit
+        :param num_episode_sample: number of episodes to be sampled. :py:`-1`
+            for no sampling.
+        :param step_repetition_range: The maximum number of steps within each scene is
+            uniformly drawn from
+            [1 - step_repeat_range, 1 + step_repeat_range] * max_scene_repeat_steps
+            on each scene switch.  This stops all workers from swapping scenes at
+            the same time
+        """
+        if seed:
+            random.seed(seed)
+            np.random.seed(seed)
+
+        if not isinstance(episodes, list):
+            episodes = list(episodes)
+
+        self.episodes = episodes
+        self.cycle = cycle
+        self.shuffle = shuffle
+        self._step_count = 0
+
+        # Get episodes in dict form with scenes and goals ids
+        self.episodes_dict = {}
+        for episode in self.episodes:
+            if episode.goals_key not in self.episodes_dict:
+                self.episodes_dict[episode.goals_key] = []
+            self.episodes_dict[episode.goals_key].append(episode)
+
+        self._iterator = None
+        # self._prev_task_id = None
+        # self._task_id = None
+
+    def set_task(self, task_id: str) -> bool:
+        task_episodes = self.episodes_dict[task_id]
+        # self._task_id = task_id
+        self._iterator = iter(task_episodes)
+        self._shuffle()
+        return True
+
+    def __iter__(self) -> "MetaEpisodeIterator":
+        return self
+
+    def __next__(self) -> Episode:
+        r"""The main logic for handling how episodes will be iterated.
+
+        :return: next episode.
+        """
+        assert self._iterator is not None, "Task not set. A call to set_task is required before calling next"
+
+        next_episode = next(self._iterator, None)
+        if next_episode is None:
+            if not self.cycle:
+                raise StopIteration
+
+            self._iterator = iter(self.episodes)
+
+            if self.shuffle:
+                self._shuffle()
+
+            next_episode = next(self._iterator)
+
+        # if (
+        #         self._prev_task_id != self._task_id
+        #         and self._prev_task_id is not None
+        # ):
+        #     self._rep_count = 0
+        #     self._step_count = 0
+        #
+        # self._prev_scene_id = self._task_id
+
+        return next_episode
+
+    def _shuffle(self) -> None:
+        r"""Internal method that shuffles the remaining episodes.
+        If self.group_by_scene is true, then shuffle groups of scenes.
+        """
+        assert self.shuffle
+        episodes = list(self._iterator)
+
+        random.shuffle(episodes)
+
+        self._iterator = iter(episodes)  # type: ignore[arg-type]
+
+    def step_taken(self) -> None:
+        self._step_count += 1
 
