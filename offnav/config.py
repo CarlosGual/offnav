@@ -189,6 +189,7 @@ _CONFIG.META.POLICY.USE_IW = True
 _CONFIG.META.POLICY.distrib_backend = "NCCL"
 _CONFIG.META.MIL = CN()
 _CONFIG.META.MIL.num_tasks = 1
+_CONFIG.META.MIL.num_gradient_updates = 4
 _CONFIG.META.METAITERATOR = CN()
 
 

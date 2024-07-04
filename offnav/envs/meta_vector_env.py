@@ -389,6 +389,14 @@ class MetaVectorEnv:
             write_fn((CALL_COMMAND, ("sample_tasks", {"num_tasks": num_tasks})))
         results = []
         for read_fn in self._connection_read_fns:
+            results.append(read_fn()[0])
+        return results
+
+    def set_tasks(self, tasks: List[str]):
+        for i, write_fn in enumerate(self._connection_write_fns):
+            write_fn((CALL_COMMAND, ("set_task", {"task_id": tasks[i]})))
+        results = []
+        for read_fn in self._connection_read_fns:
             results.append(read_fn())
         return results
 

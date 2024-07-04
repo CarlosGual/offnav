@@ -14,7 +14,7 @@ from offnav.policy.visual_encoder import VisualEncoder
 from offnav.utils.utils import load_encoder
 
 
-class ObjectNavILMAENet(Net):
+class ObjectNavILMAENet(nn.Module):
     r"""A baseline sequence to sequence network that concatenates instruction,
     RGB, and depth encodings before decoding an action distribution with an RNN.
     Modules:

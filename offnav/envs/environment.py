@@ -485,7 +485,8 @@ class MetaRLEnv(gym.Env):
 class SimpleMetaRLEnv(MetaRLEnv):
     def __init__(self, config: Config, dataset: Optional[Dataset] = None):
         super().__init__(config, dataset)
-        self._available_tasks = list(dataset.goals_by_category.keys())
+        # Get the unique goals available in the episodes
+        self._available_tasks = list(set([episode.goals_key for episode in self.episodes]))
 
     def sample_tasks(self, num_tasks):
         assert num_tasks <= len(self._available_tasks), ("num_tasks should be less than or equal to the number of "

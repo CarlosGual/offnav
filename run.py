@@ -128,7 +128,7 @@ def run_exp(exp_config: str, run_type: str, opts=None) -> None:
         elif os.environ.get("JOB_ID", None) is not None:
             world_rank = int(os.environ["OMPI_COMM_WORLD_RANK"])
         else:
-            world_rank = 1
+            world_rank = 0
         # print(f"local_rank: {local_rank}, global_rank: {global_rank}")
         if int(world_rank) == 0:  # multinode job
             wandb.init(project="offnav",

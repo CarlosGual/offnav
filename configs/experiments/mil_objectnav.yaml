@@ -4,7 +4,7 @@ ENV_NAME: "SimpleMetaRLEnv"
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
 VIDEO_OPTION: []
-TENSORBOARD_DIR: "pruebas"
+TENSORBOARD_DIR: "mil_objectnav"
 VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
 EVAL_CKPT_PATH_DIR: "data/new_checkpoints_dgx_lowerlr_3e-5"
@@ -14,6 +14,7 @@ TRAINER_NAME: "pirlnav-mil"
 SENSORS: ["RGB_SENSOR"]
 NUM_UPDATES: 10000
 LOG_INTERVAL: 10
+WANDB_ENABLED: True
 NUM_CHECKPOINTS: 20
 # Force PyTorch to be single threaded as
 # this improves performance considerably
@@ -36,6 +37,10 @@ RL:
   DDPPO:
     force_distributed: True
     pretrained: False
+
+META:
+  MIL:
+    num_gradient_updates: 1
 
 POLICY:
   CRITIC:

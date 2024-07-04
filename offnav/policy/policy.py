@@ -13,7 +13,7 @@ from torch import nn as nn
 from offnav.common.distributions import MultivariateDiagonalNormal
 
 
-class ILPolicy(nn.Module, Policy):
+class ILPolicy(nn.Module):
     def __init__(
         self,
         net,

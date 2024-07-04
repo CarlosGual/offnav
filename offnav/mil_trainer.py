@@ -50,7 +50,8 @@ from torch import nn as nn
 from torch.optim.lr_scheduler import LambdaLR
 
 from offnav.algos.agent import DDPILAgent
-from offnav.common.rollout_storage import ILRolloutStorage
+from offnav.algos.meta_agent import DDPMILAgent
+from offnav.common.rollout_storage import ILRolloutStorage, MILRolloutStorage
 from offnav.envs.env_utils import construct_meta_envs
 from habitat.core.environments import get_env_class
 from offnav.envs.meta_vector_env import MetaVectorEnv
@@ -96,22 +97,37 @@ class MILEnvDDPTrainer(PPOTrainer):
         )
         self.actor_critic.to(self.device)
 
-        self.agent = DDPILAgent(
+        self.agent = DDPMILAgent(
             actor_critic=self.actor_critic,
             num_envs=self.envs.num_envs,
             num_mini_batch=il_cfg.num_mini_batch,
-            lr=il_cfg.lr,
-            encoder_lr=il_cfg.encoder_lr,
+            inner_lr=il_cfg.lr,
+            inner_encoder_lr=il_cfg.encoder_lr,
+            outer_lr=il_cfg.lr,
+            outer_encoder_lr=il_cfg.encoder_lr,
             eps=il_cfg.eps,
             max_grad_norm=il_cfg.max_grad_norm,
             wd=il_cfg.wd,
             entropy_coef=il_cfg.entropy_coef,
         )
 
-    def init_tasks(self):
+    def sample_and_set_tasks(self):
         tasks = self.envs.sample_tasks(self.config.META.MIL.num_tasks)
-        for index_env in range(self.envs.num_envs):
-            self.envs.set_task_at(index_env, tasks[index_env][0])
+        self.envs.set_tasks(tasks)
+        # for index_env in range(self.envs.num_envs):
+        #     self.envs.set_task_at(index_env, tasks[index_env][0])
+
+        observations = self.envs.reset()
+        batch = batch_obs(
+            observations, device=self.device, cache=self._obs_batching_cache
+        )
+        batch = apply_obs_transforms_batch(batch, self.obs_transforms)  # type: ignore
+
+        if self._static_encoder:
+            with torch.no_grad():
+                batch["visual_features"] = self._encoder(batch)
+
+        self.rollouts.buffers["observations"][0] = batch  # type: ignore
 
     def _init_train(self):
         resume_state = load_resume_state(self.config)
@@ -226,7 +242,7 @@ class MILEnvDDPTrainer(PPOTrainer):
 
         self._nbuffers = 2 if il_cfg.use_double_buffered_sampler else 1
 
-        self.rollouts = ILRolloutStorage(
+        self.rollouts = MILRolloutStorage(
             il_cfg.num_steps,
             self.envs.num_envs,
             obs_space,
@@ -239,18 +255,7 @@ class MILEnvDDPTrainer(PPOTrainer):
         )
         self.rollouts.to(self.device)
 
-        self.init_tasks()
-        observations = self.envs.reset()
-        batch = batch_obs(
-            observations, device=self.device, cache=self._obs_batching_cache
-        )
-        batch = apply_obs_transforms_batch(batch, self.obs_transforms)  # type: ignore
-
-        if self._static_encoder:
-            with torch.no_grad():
-                batch["visual_features"] = self._encoder(batch)
-
-        self.rollouts.buffers["observations"][0] = batch  # type: ignore
+        self.sample_and_set_tasks()
 
         self.current_episode_reward = torch.zeros(self.envs.num_envs, 1)
         self.running_episode_stats = dict(
@@ -314,7 +319,7 @@ class MILEnvDDPTrainer(PPOTrainer):
         )
 
     @profiling_wrapper.RangeContext("_update_agent")
-    def _update_agent(self):
+    def inner_update_agent(self):
         t_update_model = time.time()
 
         self.agent.train()
@@ -324,7 +329,8 @@ class MILEnvDDPTrainer(PPOTrainer):
             rnn_hidden_states,
             dist_entropy,
             _,
-        ) = self.agent.update(self.rollouts)
+            model_states
+        ) = self.agent.inner_update(self.rollouts)
 
         self.rollouts.after_update(rnn_hidden_states)
         self.pth_time += time.time() - t_update_model
@@ -334,11 +340,31 @@ class MILEnvDDPTrainer(PPOTrainer):
             dist_entropy,
         )
 
-    def _make_inner_rollouts(self, il_cfg: Config):
-        count_steps_delta = 0
+    def outer_update_agent(self):
+        t_update_model = time.time()
+
+        self.agent.train()
+
+        (
+            action_loss,
+            rnn_hidden_states,
+            dist_entropy,
+            _,
+        ) = self.agent.outer_update(self.rollouts)
+
+        self.rollouts.after_update(rnn_hidden_states)
+        self.pth_time += time.time() - t_update_model
+
+        return (
+            action_loss,
+            dist_entropy,
+        )
+
+    def _make_rollouts(self, il_cfg: Config, count_steps_delta: int = 0):
         profiling_wrapper.range_push("inner rollouts loop")
         profiling_wrapper.range_push("_collect_rollout_step")
 
+        self.agent.eval()
         for buffer_index in range(self._nbuffers):
             self._compute_actions_and_step_envs(buffer_index)
 
@@ -369,40 +395,7 @@ class MILEnvDDPTrainer(PPOTrainer):
 
             profiling_wrapper.range_pop()  # rollouts loop
 
-    def _make_outer_rollouts(self, il_cfg: Config):
-        count_steps_delta = 0
-        profiling_wrapper.range_push("outer rollouts loop")
-        profiling_wrapper.range_push("_collect_rollout_step")
-
-        for buffer_index in range(self._nbuffers):
-            self._compute_actions_and_step_envs(buffer_index)
-
-        for step in range(il_cfg.num_steps):
-            is_last_step = (
-                    self.should_end_early(step + 1)
-                    or (step + 1) == il_cfg.num_steps
-            )
-
-            for buffer_index in range(self._nbuffers):
-                count_steps_delta += self._collect_environment_result(
-                    buffer_index
-                )
-
-                if (buffer_index + 1) == self._nbuffers:
-                    profiling_wrapper.range_pop()  # _collect_rollout_step
-
-                if not is_last_step:
-                    if (buffer_index + 1) == self._nbuffers:
-                        profiling_wrapper.range_push(
-                            "_collect_rollout_step"
-                        )
-
-                    self._compute_actions_and_step_envs(buffer_index)
-
-            if is_last_step:
-                break
-
-            profiling_wrapper.range_pop()  # rollouts loop
+        return count_steps_delta
 
     @profiling_wrapper.RangeContext("train")
     def train(self) -> None:
@@ -418,7 +411,7 @@ class MILEnvDDPTrainer(PPOTrainer):
         prev_time = 0
 
         lr_scheduler = LambdaLR(
-            optimizer=self.agent.optimizer,
+            optimizer=self.agent.outer_optimizer,
             lr_lambda=lambda x: 1 - self.percent_done(),
         )
 
@@ -493,14 +486,27 @@ class MILEnvDDPTrainer(PPOTrainer):
 
                     return
 
-                self.agent.eval()
                 count_steps_delta = 0
 
-                self._make_inner_rollouts(il_cfg)
-                self._make_outer_rollouts(il_cfg)
+                # Make several gradient updates so the agent can adapt to trajectories that make it to the goal
+                # INNER UPDATE LOOP
+                inner_action_loss = []
+                inner_dist_entropy = []
+                for i in range(self.config.META.MIL.num_gradient_updates):
+                    count_steps_delta = self._make_rollouts(il_cfg, count_steps_delta)
+                    action_loss, dist_entropy = self.inner_update_agent()
+                    inner_action_loss.append(action_loss)
+                    inner_dist_entropy.append(dist_entropy)
+
+                # OUTER UPDATE
+                count_steps_delta = self._make_rollouts(il_cfg, count_steps_delta)
+                outer_action_loss, outer_dist_entropy = self.outer_update_agent()
+
+                # Sample new tasks for the next update
+                self.sample_and_set_tasks()
 
                 if self._is_distributed:
-                    self.num_rollouts_done_store.add("num_done", 1)
+                    self.num_rollouts_done_store.add("num_done", self.config.META.MIL.num_gradient_updates + 1)
 
                 for i, episode in enumerate(self.envs.current_episodes()):
                     logger.info(
@@ -512,19 +518,16 @@ class MILEnvDDPTrainer(PPOTrainer):
                             episode.episode_id)
                         )
 
-                (
-                    action_loss,
-                    dist_entropy,
-                ) = self._update_agent()
-
                 if il_cfg.use_linear_lr_decay:
                     lr_scheduler.step()  # type: ignore
 
                 self.num_updates_done += 1
                 losses = self._coalesce_post_step(
                     dict(
-                        action_loss=action_loss,
-                        entropy=dist_entropy,
+                        inner_action_loss=np.mean(inner_action_loss),
+                        inner_entropy=np.mean(inner_dist_entropy),
+                        outer_action_loss=outer_action_loss,
+                        outer_entropy=outer_dist_entropy,
                     ),
                     count_steps_delta,
                 )
