@@ -103,9 +103,7 @@ class MILAgent(nn.Module):
         cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction="none")
         hidden_states = []
 
-
         for i, task in enumerate(train_task_generator):
-
             with torch.backends.cudnn.flags(enabled=False):
                 with higher.innerloop_ctx(self.actor_critic, self.inner_optimizer, copy_initial_weights=False) as (
                         fmodel, diffopt):
@@ -189,30 +187,30 @@ class MILAgent(nn.Module):
                         task["masks"],
                     )
 
-            N = task["recurrent_hidden_states"].shape[0]
-            T = task["actions"].shape[0] // N
-            actions_batch = task["actions"].view(T, N, -1)
-            logits = logits.view(T, N, -1)
+                N = task["recurrent_hidden_states"].shape[0]
+                T = task["actions"].shape[0] // N
+                actions_batch = task["actions"].view(T, N, -1)
+                logits = logits.view(T, N, -1)
 
-            action_loss = cross_entropy_loss(
-                logits.permute(0, 2, 1), actions_batch.squeeze(-1)
-            )
-            entropy_term = dist_entropy * self.entropy_coef
+                action_loss = cross_entropy_loss(
+                    logits.permute(0, 2, 1), actions_batch.squeeze(-1)
+                )
+                entropy_term = dist_entropy * self.entropy_coef
 
-            inflections_batch = task["observations"][
-                "inflection_weight"
-            ].view(T, N, -1)
+                inflections_batch = task["observations"][
+                    "inflection_weight"
+                ].view(T, N, -1)
 
-            action_loss_term = (
-                    (inflections_batch * action_loss.unsqueeze(-1)).sum(0)
-                    / inflections_batch.sum(0)
-            ).mean()
-            total_loss = action_loss_term - entropy_term
+                action_loss_term = (
+                        (inflections_batch * action_loss.unsqueeze(-1)).sum(0)
+                        / inflections_batch.sum(0)
+                ).mean()
+                total_loss = action_loss_term - entropy_term
 
-            total_loss_outer.append(total_loss)
-            total_action_loss_outer += action_loss_term.item()
-            total_entropy_outer += dist_entropy.item()
-            hidden_states.append(rnn_hidden_states)
+                total_loss_outer.append(total_loss)
+                total_action_loss_outer += action_loss_term.item()
+                total_entropy_outer += dist_entropy.item()
+                hidden_states.append(rnn_hidden_states)
 
         # Optimize model
         total_loss_outer = torch.stack(total_loss_outer).mean()

@@ -329,7 +329,6 @@ class MILEnvDDPTrainer(PPOTrainer):
             rnn_hidden_states,
             dist_entropy,
             _,
-            model_states
         ) = self.agent.inner_update(self.rollouts)
 
         self.rollouts.after_update(rnn_hidden_states)
@@ -418,7 +417,8 @@ class MILEnvDDPTrainer(PPOTrainer):
         # resume_state = load_resume_state(self.config)
         if resume_state is not None:
             self.agent.load_state_dict(resume_state["state_dict"])
-            self.agent.optimizer.load_state_dict(resume_state["optim_state"])
+            self.agent.inner_optimizer.load_state_dict(resume_state["inner_optim_state"])
+            self.agent.outer_optimizer.load_state_dict(resume_state["outer_optim_state"])
             lr_scheduler.load_state_dict(resume_state["lr_sched_state"])
 
             requeue_stats = resume_state["requeue_stats"]
@@ -469,7 +469,8 @@ class MILEnvDDPTrainer(PPOTrainer):
                     save_resume_state(
                         dict(
                             state_dict=self.agent.state_dict(),
-                            optim_state=self.agent.optimizer.state_dict(),
+                            inner_optim_state=self.agent.inner_optimizer.state_dict(),
+                            outer_optim_state=self.agent.outer_optimizer.state_dict(),
                             lr_sched_state=lr_scheduler.state_dict(),
                             config=self.config,
                             requeue_stats=requeue_stats,
