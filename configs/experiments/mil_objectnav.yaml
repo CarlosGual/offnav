@@ -4,17 +4,17 @@ ENV_NAME: "SimpleMetaRLEnv"
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
 VIDEO_OPTION: []
-TENSORBOARD_DIR: "mil_objectnav"
+TENSORBOARD_DIR: "mil_objectnav_one_loop"
 VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
 EVAL_CKPT_PATH_DIR: "data/new_checkpoints_dgx_lowerlr_3e-5"
-NUM_ENVIRONMENTS: 2
-CHECKPOINT_FOLDER: "data/checkpoints/pruebas"
+NUM_ENVIRONMENTS: 1
+CHECKPOINT_FOLDER: "data/checkpoints/mil/mil_objectnav_one_loop"
 TRAINER_NAME: "pirlnav-mil"
 SENSORS: ["RGB_SENSOR"]
 NUM_UPDATES: 100
 LOG_INTERVAL: 10
-WANDB_ENABLED: True
+WANDB_ENABLED: False
 NUM_CHECKPOINTS: 100
 # Force PyTorch to be single threaded as
 # this improves performance considerably
@@ -26,10 +26,10 @@ EVAL:
 IL:
   POLICY:
     name: "ObjectNavILMAEPolicy"
-  BehavioralCloning:
+  BehaviorCloning:
     encoder_lr: 0.0001
     lr: 0.0001
-    num_mini_batch: 8
+    num_mini_batch: 1
 
 RL:
   SUCCESS_REWARD: 2.5

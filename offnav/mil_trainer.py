@@ -11,6 +11,8 @@ import time
 from collections import defaultdict, deque
 from typing import Any, Dict, List
 import copy
+
+import higher
 import numpy as np
 import torch
 import tqdm
@@ -60,6 +62,7 @@ from offnav.envs.meta_vector_env import MetaVectorEnv
 @baseline_registry.register_trainer(name="pirlnav-mil")
 class MILEnvDDPTrainer(PPOTrainer):
     envs: MetaVectorEnv
+
     def __init__(self, config=None):
         super().__init__(config)
 
@@ -489,19 +492,46 @@ class MILEnvDDPTrainer(PPOTrainer):
 
                 count_steps_delta = 0
 
-                # Make several gradient updates so the agent can adapt to trajectories that make it to the goal
-                # INNER UPDATE LOOP
+
                 inner_action_loss = []
                 inner_dist_entropy = []
-                for i in range(self.config.META.MIL.num_gradient_updates):
-                    count_steps_delta = self._make_rollouts(il_cfg, count_steps_delta)
-                    action_loss, dist_entropy = self.inner_update_agent()
-                    inner_action_loss.append(action_loss)
-                    inner_dist_entropy.append(dist_entropy)
+                with torch.backends.cudnn.flags(enabled=False):
+                    with higher.innerloop_ctx(self.actor_critic, self.agent.inner_optimizer,
+                                              copy_initial_weights=False) as (fmodel, diffopt):
+                        # Make several gradient updates so the agent can adapt to trajectories that make it to the goal
+                        # INNER UPDATE LOOP
+                        for i in range(self.config.META.MIL.num_gradient_updates):
+                            count_steps_delta = self._make_rollouts(il_cfg, count_steps_delta)
+                            t_update_model = time.time()
+                            self.agent.train()
+                            (
+                                action_loss,
+                                inner_rnn_hidden_states,
+                                dist_entropy,
+                                _,
+                            ) = self.agent.inner_update(self.rollouts, fmodel, diffopt)
 
-                # OUTER UPDATE
-                count_steps_delta = self._make_rollouts(il_cfg, count_steps_delta)
-                outer_action_loss, outer_dist_entropy = self.outer_update_agent()
+                            self.rollouts.after_update(inner_rnn_hidden_states)
+                            self.pth_time += time.time() - t_update_model
+
+                            inner_action_loss.append(action_loss)
+                            inner_dist_entropy.append(dist_entropy)
+
+                        # OUTER UPDATE
+                        count_steps_delta = self._make_rollouts(il_cfg, count_steps_delta)
+                        t_update_model = time.time()
+
+                        self.agent.train()
+
+                        (
+                            outer_action_loss,
+                            outer_rnn_hidden_states,
+                            outer_dist_entropy,
+                            _,
+                        ) = self.agent.outer_update(self.rollouts, fmodel)
+
+                        self.rollouts.after_update(outer_rnn_hidden_states)
+                        self.pth_time += time.time() - t_update_model
 
                 # Sample new tasks for the next update
                 self.sample_and_set_tasks()
@@ -517,7 +547,7 @@ class MILEnvDDPTrainer(PPOTrainer):
                             episode.object_category,
                             episode.goals_key,
                             episode.episode_id)
-                        )
+                    )
 
                 if il_cfg.use_linear_lr_decay:
                     lr_scheduler.step()  # type: ignore

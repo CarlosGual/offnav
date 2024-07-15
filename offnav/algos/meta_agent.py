@@ -93,7 +93,7 @@ class MILAgent(nn.Module):
     def forward(self, *x):
         raise NotImplementedError
 
-    def inner_update(self, rollouts) -> Tuple[float, torch.Tensor, float, float, list]:
+    def inner_update(self, rollouts, fmodel, diffopt) -> Tuple[float, torch.Tensor, float, float, list]:
         total_loss_inner = 0.0
         total_entropy_inner = 0.0
         total_action_loss_inner = 0.0
@@ -104,43 +104,41 @@ class MILAgent(nn.Module):
         hidden_states = []
 
         for i, task in enumerate(train_task_generator):
-            with torch.backends.cudnn.flags(enabled=False):
-                with higher.innerloop_ctx(self.actor_critic, self.inner_optimizer, copy_initial_weights=False) as (
-                        fmodel, diffopt):
-                    # Reshape to do in a single forward pass for all steps
-                    (logits, rnn_hidden_states, dist_entropy) = fmodel(
-                        task["observations"],
-                        task["recurrent_hidden_states"],
-                        task["prev_actions"],
-                        task["masks"],
-                    )
 
-                    N = task["recurrent_hidden_states"].shape[0]
-                    T = task["actions"].shape[0] // N
-                    actions_batch = task["actions"].view(T, N, -1)
-                    logits = logits.view(T, N, -1)
+            # Reshape to do in a single forward pass for all steps
+            (logits, rnn_hidden_states, dist_entropy) = fmodel(
+                task["observations"],
+                task["recurrent_hidden_states"],
+                task["prev_actions"],
+                task["masks"],
+            )
 
-                    action_loss = cross_entropy_loss(
-                        logits.permute(0, 2, 1), actions_batch.squeeze(-1)
-                    )
-                    entropy_term = dist_entropy * self.entropy_coef
+            N = task["recurrent_hidden_states"].shape[0]
+            T = task["actions"].shape[0] // N
+            actions_batch = task["actions"].view(T, N, -1)
+            logits = logits.view(T, N, -1)
 
-                    inflections_batch = task["observations"][
-                        "inflection_weight"
-                    ].view(T, N, -1)
+            action_loss = cross_entropy_loss(
+                logits.permute(0, 2, 1), actions_batch.squeeze(-1)
+            )
+            entropy_term = dist_entropy * self.entropy_coef
 
-                    action_loss_term = (
-                            (inflections_batch * action_loss.unsqueeze(-1)).sum(0)
-                            / inflections_batch.sum(0)
-                    ).mean()
-                    total_loss = action_loss_term - entropy_term
+            inflections_batch = task["observations"][
+                "inflection_weight"
+            ].view(T, N, -1)
 
-                    self.before_backward(total_loss)
-                    self.after_backward(total_loss)
+            action_loss_term = (
+                    (inflections_batch * action_loss.unsqueeze(-1)).sum(0)
+                    / inflections_batch.sum(0)
+            ).mean()
+            total_loss = action_loss_term - entropy_term
 
-                    self.before_step()
-                    diffopt.step(total_loss)
-                    self.after_step()
+            self.before_backward(total_loss)
+            self.after_backward(total_loss)
+
+            self.before_step()
+            diffopt.step(total_loss)
+            self.after_step()
 
             total_loss_inner += total_loss.item()
             total_action_loss_inner += action_loss_term.item()
@@ -162,8 +160,7 @@ class MILAgent(nn.Module):
             total_action_loss_inner,
         )
 
-    def outer_update(self, rollouts) -> Tuple[float, torch.Tensor, float, float]:
-        total_loss_outer = 0.0
+    def outer_update(self, rollouts, fmodel) -> Tuple[float, torch.Tensor, float, float]:
         total_entropy_outer = 0.0
         total_action_loss_outer = 0.0
         torch.autograd.set_detect_anomaly(True)
@@ -176,41 +173,38 @@ class MILAgent(nn.Module):
 
         for i, task in enumerate(valid_task_generator):
 
-            with torch.backends.cudnn.flags(enabled=False):
-                with higher.innerloop_ctx(self.actor_critic, self.inner_optimizer, copy_initial_weights=False) as (
-                        fmodel, diffopt):
-                    # Reshape to do in a single forward pass for all steps
-                    (logits, rnn_hidden_states, dist_entropy) = fmodel(
-                        task["observations"],
-                        task["recurrent_hidden_states"],
-                        task["prev_actions"],
-                        task["masks"],
-                    )
+            # Reshape to do in a single forward pass for all steps
+            (logits, rnn_hidden_states, dist_entropy) = fmodel(
+                task["observations"],
+                task["recurrent_hidden_states"],
+                task["prev_actions"],
+                task["masks"],
+            )
 
-                N = task["recurrent_hidden_states"].shape[0]
-                T = task["actions"].shape[0] // N
-                actions_batch = task["actions"].view(T, N, -1)
-                logits = logits.view(T, N, -1)
+            N = task["recurrent_hidden_states"].shape[0]
+            T = task["actions"].shape[0] // N
+            actions_batch = task["actions"].view(T, N, -1)
+            logits = logits.view(T, N, -1)
 
-                action_loss = cross_entropy_loss(
-                    logits.permute(0, 2, 1), actions_batch.squeeze(-1)
-                )
-                entropy_term = dist_entropy * self.entropy_coef
+            action_loss = cross_entropy_loss(
+                logits.permute(0, 2, 1), actions_batch.squeeze(-1)
+            )
+            entropy_term = dist_entropy * self.entropy_coef
 
-                inflections_batch = task["observations"][
-                    "inflection_weight"
-                ].view(T, N, -1)
+            inflections_batch = task["observations"][
+                "inflection_weight"
+            ].view(T, N, -1)
 
-                action_loss_term = (
-                        (inflections_batch * action_loss.unsqueeze(-1)).sum(0)
-                        / inflections_batch.sum(0)
-                ).mean()
-                total_loss = action_loss_term - entropy_term
+            action_loss_term = (
+                    (inflections_batch * action_loss.unsqueeze(-1)).sum(0)
+                    / inflections_batch.sum(0)
+            ).mean()
+            total_loss = action_loss_term - entropy_term
 
-                total_loss_outer.append(total_loss)
-                total_action_loss_outer += action_loss_term.item()
-                total_entropy_outer += dist_entropy.item()
-                hidden_states.append(rnn_hidden_states)
+            total_loss_outer.append(total_loss)
+            total_action_loss_outer += action_loss_term.item()
+            total_entropy_outer += dist_entropy.item()
+            hidden_states.append(rnn_hidden_states)
 
         # Optimize model
         total_loss_outer = torch.stack(total_loss_outer).mean()
@@ -238,6 +232,9 @@ class MILAgent(nn.Module):
             total_entropy_outer,
             total_action_loss_outer,
         )
+
+    def update(self, inner_rollouts, outer_rollouts):
+        pass
 
     def before_backward(self, loss: Tensor) -> None:
         pass
