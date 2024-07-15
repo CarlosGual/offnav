@@ -28,10 +28,11 @@ from habitat_baselines.common.obs_transformers import (
     get_active_obs_transforms,
 )
 from habitat_baselines.common.tensorboard_utils import TensorboardWriter, get_writer
-from habitat_baselines.rl.ddppo.ddp_utils import (
+from offnav.common.ddp_utils import (
     EXIT,
     add_signal_handlers,
     init_distrib_tsubame,
+    init_distrib_slurm,
     is_slurm_batch_job,
     load_resume_state,
     rank0_only,
@@ -158,7 +159,7 @@ class MILEnvDDPTrainer(PPOTrainer):
         self.config.freeze()
 
         if self._is_distributed:
-            local_rank, tcp_store = init_distrib_tsubame(
+            local_rank, tcp_store = init_distrib_slurm(
                 self.config.RL.DDPPO.distrib_backend
             )
             if rank0_only():
@@ -547,7 +548,7 @@ class MILEnvDDPTrainer(PPOTrainer):
                             episode.object_category,
                             episode.goals_key,
                             episode.episode_id)
-                    )
+                        )
 
                 if il_cfg.use_linear_lr_decay:
                     lr_scheduler.step()  # type: ignore

@@ -2,7 +2,7 @@
 #AKBATCH -r troll_2
 #SBATCH -N 1
 #SBATCH --requeue
-#SBATCH -J pirlnav_resnet18_setup4
+#SBATCH -J mil_resnet18_higher_two_loops
 #SBATCH --output=slurm_logs/%x-%j.out
 
 # shellcheck disable=SC1090
@@ -26,12 +26,12 @@ export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
 export OMP_NUM_THREADS=$((num_cpus/num_gpus))
 
-setup="setup4"
-exp_name="pirlnav_resnet18"
-config="configs/experiments/il_objectnav.yaml"
+setup="setup1"
+exp_name="mil_resnet18_higher_two_loops"
+config="configs/experiments/mil_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_${setup}"
 TENSORBOARD_DIR="tb/${exp_name}_${setup}"
-CHECKPOINT_DIR="data/checkpoints/offnav/${exp_name}_${setup}"
+CHECKPOINT_DIR="data/checkpoints/mil/${exp_name}_${setup}"
 
 mkdir -p $TENSORBOARD_DIR
 mkdir -p $CHECKPOINT_DIR
@@ -45,7 +45,7 @@ torchrun --nproc_per_node $num_gpus run.py \
     CHECKPOINT_FOLDER $CHECKPOINT_DIR \
     NUM_UPDATES 50000 \
     WANDB_ENABLED True \
-    NUM_ENVIRONMENTS 12 \
-    OFFLINE.IQL.num_mini_batch 3 \
+    NUM_ENVIRONMENTS 20 \
+    OFFLINE.IQL.num_mini_batch 20 \
     RL.DDPPO.force_distributed True \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz"
