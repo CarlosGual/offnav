@@ -540,15 +540,15 @@ class MILEnvDDPTrainer(PPOTrainer):
                 if self._is_distributed:
                     self.num_rollouts_done_store.add("num_done", self.config.META.MIL.num_gradient_updates + 1)
 
-                for i, episode in enumerate(self.envs.current_episodes()):
-                    logger.info(
-                        "Environment: {}, Current scene: {}, Current goal {}, Current task_id {}, episode: {}".format(
-                            i,
-                            episode.scene_id.split(".")[-3].split("/")[-1],
-                            episode.object_category,
-                            episode.goals_key,
-                            episode.episode_id)
-                        )
+                # for i, episode in enumerate(self.envs.current_episodes()):
+                #     logger.info(
+                #         "Environment: {}, Current scene: {}, Current goal {}, Current task_id {}, episode: {}".format(
+                #             i,
+                #             episode.scene_id.split(".")[-3].split("/")[-1],
+                #             episode.object_category,
+                #             episode.goals_key,
+                #             episode.episode_id)
+                #         )
 
                 if il_cfg.use_linear_lr_decay:
                     lr_scheduler.step()  # type: ignore

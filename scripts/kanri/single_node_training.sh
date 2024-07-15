@@ -2,7 +2,7 @@
 #AKBATCH -r troll_2
 #SBATCH -N 1
 #SBATCH --requeue
-#SBATCH -J mil_resnet18_higher_two_loops
+#SBATCH -J mil_resnet18_higher_one_loop
 #SBATCH --output=slurm_logs/%x-%j.out
 
 # shellcheck disable=SC1090
@@ -27,7 +27,7 @@ export HABITAT_SIM_LOG=quiet
 export OMP_NUM_THREADS=$((num_cpus/num_gpus))
 
 setup="setup1"
-exp_name="mil_resnet18_higher_two_loops"
+exp_name="mil_resnet18_higher_one_loop"
 config="configs/experiments/mil_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_${setup}"
 TENSORBOARD_DIR="tb/${exp_name}_${setup}"
@@ -45,7 +45,7 @@ torchrun --nproc_per_node $num_gpus run.py \
     CHECKPOINT_FOLDER $CHECKPOINT_DIR \
     NUM_UPDATES 50000 \
     WANDB_ENABLED True \
-    NUM_ENVIRONMENTS 20 \
-    OFFLINE.IQL.num_mini_batch 20 \
+    NUM_ENVIRONMENTS 10 \
+    OFFLINE.IQL.num_mini_batch 10 \
     RL.DDPPO.force_distributed True \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz"
