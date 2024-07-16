@@ -25,6 +25,7 @@ export GLOG_minloglevel=2
 export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
 export OMP_NUM_THREADS=$((num_cpus/num_gpus))
+export WANDB_MODE=offline
 
 setup="setup1"
 exp_name="mil_resnet18_higher_one_loop"
