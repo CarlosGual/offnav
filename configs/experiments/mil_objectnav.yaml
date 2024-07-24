@@ -14,7 +14,7 @@ TRAINER_NAME: "pirlnav-mil"
 SENSORS: ["RGB_SENSOR"]
 NUM_UPDATES: 10000
 LOG_INTERVAL: 10
-WANDB_ENABLED: True
+WANDB_ENABLED: False
 NUM_CHECKPOINTS: 20
 # Force PyTorch to be single threaded as
 # this improves performance considerably
@@ -26,10 +26,10 @@ EVAL:
 IL:
   POLICY:
     name: "ObjectNavILMAEPolicy"
-  BehavioralCloning:
+  BehaviorCloning:
     encoder_lr: 0.0001
     lr: 0.0001
-    num_mini_batch: 8
+    num_mini_batch: 2
 
 RL:
   SUCCESS_REWARD: 2.5
