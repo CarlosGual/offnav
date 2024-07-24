@@ -5,7 +5,7 @@ import copy
 # LICENSE file in the root directory of this source tree.
 
 from typing import Optional, Tuple, Any
-
+import learn2learn as l2l
 import higher
 import numpy as np
 import torch
@@ -14,8 +14,6 @@ from habitat.utils import profiling_wrapper
 from torch import Tensor
 from torch import nn as nn
 from torch import optim as optim
-
-from offnav.utils.utils import soft_update_from_to
 
 
 class MILAgent(nn.Module):
@@ -27,19 +25,16 @@ class MILAgent(nn.Module):
             outer_lr: Optional[float] = None,
             outer_encoder_lr: Optional[float] = None,
             inner_lr: Optional[float] = None,
-            inner_encoder_lr: Optional[float] = None,
             eps: Optional[float] = None,
             max_grad_norm: Optional[float] = None,
             wd: Optional[float] = None,
             outer_optimizer: Optional[str] = "AdamW",
-            inner_optimizer: Optional[str] = "SGD",
             entropy_coef: Optional[float] = 0.0,
     ) -> None:
 
         super().__init__()
 
-        self.inner_lr = inner_lr
-        self.actor_critic = actor_critic
+        self.actor_critic = l2l.algorithms.MAML(actor_critic, lr=inner_lr)
 
         self.num_mini_batch = num_mini_batch
 
@@ -49,7 +44,7 @@ class MILAgent(nn.Module):
 
         # use different lr for visual encoder and other networks
         visual_encoder_params, other_params = [], []
-        for name, param in actor_critic.named_parameters():
+        for name, param in self.actor_critic.named_parameters():
             if param.requires_grad:
                 if "net.visual_encoder.backbone" in name:
                     visual_encoder_params.append(param)
@@ -74,26 +69,90 @@ class MILAgent(nn.Module):
             self.outer_optimizer = optim.Adam(
                 list(
                     filter(
-                        lambda p: p.requires_grad, actor_critic.parameters()
+                        lambda p: p.requires_grad, self.actor_critic.parameters()
                     )
                 ),
                 lr=outer_lr,
                 eps=eps,
             )
-        self.device = next(actor_critic.parameters()).device
-        self.inner_optimizer = optim.SGD(
-            list(
-                filter(
-                    lambda p: p.requires_grad, actor_critic.parameters()
-                )
-            ),
-            lr=inner_lr,
-        )
+        self.device = next(self.actor_critic.parameters()).device
 
     def forward(self, *x):
         raise NotImplementedError
 
-    def inner_update(self, rollouts, fmodel, diffopt) -> Tuple[float, torch.Tensor, float, float, list]:
+    def calculate_loss(self, task, learner):
+        cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction="none")
+        (logits, rnn_hidden_states, dist_entropy) = learner(
+            task["observations"],
+            task["recurrent_hidden_states"],
+            task["prev_actions"],
+            task["masks"],
+        )
+
+        N = task["recurrent_hidden_states"].shape[0]
+        T = task["actions"].shape[0] // N
+        actions_batch = task["actions"].view(T, N, -1)
+        logits = logits.view(T, N, -1)
+
+        action_loss = cross_entropy_loss(
+            logits.permute(0, 2, 1), actions_batch.squeeze(-1)
+        )
+        entropy_term = dist_entropy * self.entropy_coef
+
+        inflections_batch = task["observations"][
+            "inflection_weight"
+        ].view(T, N, -1)
+
+        action_loss_term = (
+                (inflections_batch * action_loss.unsqueeze(-1)).sum(0)
+                / inflections_batch.sum(0)
+        ).mean()
+
+        total_loss = action_loss_term - entropy_term
+
+        return (
+            total_loss,
+            rnn_hidden_states,
+            dist_entropy,
+            action_loss_term)
+
+    def calculate_valid_loss(self, task, learner, rnn_hidden_states):
+        cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction="none")
+        (logits, rnn_hidden_states, dist_entropy) = learner(
+            task["observations"],
+            rnn_hidden_states,
+            task["prev_actions"],
+            task["masks"],
+        )
+
+        N = task["recurrent_hidden_states"].shape[0]
+        T = task["actions"].shape[0] // N
+        actions_batch = task["actions"].view(T, N, -1)
+        logits = logits.view(T, N, -1)
+
+        action_loss = cross_entropy_loss(
+            logits.permute(0, 2, 1), actions_batch.squeeze(-1)
+        )
+        entropy_term = dist_entropy * self.entropy_coef
+
+        inflections_batch = task["observations"][
+            "inflection_weight"
+        ].view(T, N, -1)
+
+        action_loss_term = (
+                (inflections_batch * action_loss.unsqueeze(-1)).sum(0)
+                / inflections_batch.sum(0)
+        ).mean()
+
+        total_loss = action_loss_term - entropy_term
+
+        return (
+            total_loss,
+            rnn_hidden_states,
+            dist_entropy,
+            action_loss_term)
+
+    def inner_update(self, rollouts) -> Tuple[float, torch.Tensor, float, float, list]:
         total_loss_inner = 0.0
         total_entropy_inner = 0.0
         total_action_loss_inner = 0.0
@@ -104,9 +163,9 @@ class MILAgent(nn.Module):
         hidden_states = []
 
         for i, task in enumerate(train_task_generator):
-
             # Reshape to do in a single forward pass for all steps
-            (logits, rnn_hidden_states, dist_entropy) = fmodel(
+            learner = self.actor_critic.clone()
+            (logits, rnn_hidden_states, dist_entropy) = learner(
                 task["observations"],
                 task["recurrent_hidden_states"],
                 task["prev_actions"],
@@ -137,12 +196,12 @@ class MILAgent(nn.Module):
             self.after_backward(total_loss)
 
             self.before_step()
-            diffopt.step(total_loss)
+            learner.adapt(total_loss)
             self.after_step()
 
-            total_loss_inner += total_loss.item()
-            total_action_loss_inner += action_loss_term.item()
-            total_entropy_inner += dist_entropy.item()
+            total_loss_inner += total_loss
+            total_action_loss_inner += action_loss_term
+            total_entropy_inner += dist_entropy
             hidden_states.append(rnn_hidden_states)
 
         profiling_wrapper.range_pop()
@@ -160,7 +219,8 @@ class MILAgent(nn.Module):
             total_action_loss_inner,
         )
 
-    def outer_update(self, rollouts, fmodel) -> Tuple[float, torch.Tensor, float, float]:
+    def outer_update(self, rollouts) -> Tuple[float, torch.Tensor, float, float]:
+        total_loss_outer = 0.0
         total_entropy_outer = 0.0
         total_action_loss_outer = 0.0
         torch.autograd.set_detect_anomaly(True)
@@ -172,7 +232,6 @@ class MILAgent(nn.Module):
         # used to store adapted parameters
 
         for i, task in enumerate(valid_task_generator):
-
             # Reshape to do in a single forward pass for all steps
             (logits, rnn_hidden_states, dist_entropy) = fmodel(
                 task["observations"],
@@ -232,9 +291,6 @@ class MILAgent(nn.Module):
             total_entropy_outer,
             total_action_loss_outer,
         )
-
-    def update(self, inner_rollouts, outer_rollouts):
-        pass
 
     def before_backward(self, loss: Tensor) -> None:
         pass

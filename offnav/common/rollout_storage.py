@@ -369,6 +369,8 @@ class MILRolloutStorage:
     ):
         self.buffers = TensorDict()
         self.buffers["observations"] = TensorDict()
+        # To store two trayectories of lenght numsteps/2
+        numsteps *= 2
 
         for sensor in observation_space.spaces:
             self.buffers["observations"][sensor] = torch.from_numpy(
@@ -490,7 +492,7 @@ class MILRolloutStorage:
             0 for _ in self.current_rollout_step_idxs
         ]
 
-    def recurrent_generator(self, num_mini_batch) -> Iterator[TensorDict]:
+    def adapt_recurrent_generator(self, num_mini_batch) -> Iterator[TensorDict]:
         num_environments = self.buffers["actions"].size(1)
         assert num_environments >= num_mini_batch, (
             "Trainer requires the number of environments ({}) "
@@ -508,9 +510,28 @@ class MILRolloutStorage:
                 )
             )
         for inds in torch.arange(num_environments).chunk(num_mini_batch):
-            batch = self.buffers[0: self.current_rollout_step_idx, inds]
-            batch["recurrent_hidden_states"] = self.recurrent_hidden_states[
-                                               0:1, inds
-                                               ]
+            batch = self.buffers[0: self.current_rollout_step_idx/2, inds]
+            batch["recurrent_hidden_states"] = self.recurrent_hidden_states[0:1, inds]
+            yield batch.map(lambda v: v.flatten(0, 1))
 
+    def valid_recurrent_generator(self, num_mini_batch) -> Iterator[TensorDict]:
+        num_environments = self.buffers["actions"].size(1)
+        assert num_environments >= num_mini_batch, (
+            "Trainer requires the number of environments ({}) "
+            "to be greater than or equal to the number of "
+            "trainer mini batches ({}).".format(
+                num_environments, num_mini_batch
+            )
+        )
+        if num_environments % num_mini_batch != 0:
+            warnings.warn(
+                "Number of environments ({}) is not a multiple of the"
+                " number of mini batches ({}).  This results in mini batches"
+                " of different sizes, which can harm training performance.".format(
+                    num_environments, num_mini_batch
+                )
+            )
+        for inds in torch.arange(num_environments).chunk(num_mini_batch):
+            batch = self.buffers[self.current_rollout_step_idx/2:self.current_rollout_step_idx, inds]
+            batch["recurrent_hidden_states"] = self.recurrent_hidden_states[0:1, inds]
             yield batch.map(lambda v: v.flatten(0, 1))

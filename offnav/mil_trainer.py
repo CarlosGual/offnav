@@ -11,8 +11,6 @@ import time
 from collections import defaultdict, deque
 from typing import Any, Dict, List
 import copy
-
-import higher
 import numpy as np
 import torch
 import tqdm
@@ -28,11 +26,10 @@ from habitat_baselines.common.obs_transformers import (
     get_active_obs_transforms,
 )
 from habitat_baselines.common.tensorboard_utils import TensorboardWriter, get_writer
-from offnav.common.ddp_utils import (
+from habitat_baselines.rl.ddppo.ddp_utils import (
     EXIT,
     add_signal_handlers,
     init_distrib_tsubame,
-    init_distrib_slurm,
     is_slurm_batch_job,
     load_resume_state,
     rank0_only,
@@ -106,7 +103,6 @@ class MILEnvDDPTrainer(PPOTrainer):
             num_envs=self.envs.num_envs,
             num_mini_batch=il_cfg.num_mini_batch,
             inner_lr=il_cfg.lr,
-            inner_encoder_lr=il_cfg.encoder_lr,
             outer_lr=il_cfg.lr,
             outer_encoder_lr=il_cfg.encoder_lr,
             eps=il_cfg.eps,
@@ -118,8 +114,6 @@ class MILEnvDDPTrainer(PPOTrainer):
     def sample_and_set_tasks(self):
         tasks = self.envs.sample_tasks(self.config.META.MIL.num_tasks)
         self.envs.set_tasks(tasks)
-        # for index_env in range(self.envs.num_envs):
-        #     self.envs.set_task_at(index_env, tasks[index_env][0])
 
         observations = self.envs.reset()
         batch = batch_obs(
@@ -159,7 +153,7 @@ class MILEnvDDPTrainer(PPOTrainer):
         self.config.freeze()
 
         if self._is_distributed:
-            local_rank, tcp_store = init_distrib_slurm(
+            local_rank, tcp_store = init_distrib_tsubame(
                 self.config.RL.DDPPO.distrib_backend
             )
             if rank0_only():
@@ -333,6 +327,7 @@ class MILEnvDDPTrainer(PPOTrainer):
             rnn_hidden_states,
             dist_entropy,
             _,
+            model_states
         ) = self.agent.inner_update(self.rollouts)
 
         self.rollouts.after_update(rnn_hidden_states)
@@ -371,10 +366,10 @@ class MILEnvDDPTrainer(PPOTrainer):
         for buffer_index in range(self._nbuffers):
             self._compute_actions_and_step_envs(buffer_index)
 
-        for step in range(il_cfg.num_steps):
+        for step in range(il_cfg.num_steps * 2):
             is_last_step = (
                     self.should_end_early(step + 1)
-                    or (step + 1) == il_cfg.num_steps
+                    or (step + 1) == il_cfg.num_steps * 2
             )
 
             for buffer_index in range(self._nbuffers):
@@ -421,8 +416,7 @@ class MILEnvDDPTrainer(PPOTrainer):
         # resume_state = load_resume_state(self.config)
         if resume_state is not None:
             self.agent.load_state_dict(resume_state["state_dict"])
-            self.agent.inner_optimizer.load_state_dict(resume_state["inner_optim_state"])
-            self.agent.outer_optimizer.load_state_dict(resume_state["outer_optim_state"])
+            self.agent.optimizer.load_state_dict(resume_state["optim_state"])
             lr_scheduler.load_state_dict(resume_state["lr_sched_state"])
 
             requeue_stats = resume_state["requeue_stats"]
@@ -473,8 +467,7 @@ class MILEnvDDPTrainer(PPOTrainer):
                     save_resume_state(
                         dict(
                             state_dict=self.agent.state_dict(),
-                            inner_optim_state=self.agent.inner_optimizer.state_dict(),
-                            outer_optim_state=self.agent.outer_optimizer.state_dict(),
+                            optim_state=self.agent.optimizer.state_dict(),
                             lr_sched_state=lr_scheduler.state_dict(),
                             config=self.config,
                             requeue_stats=requeue_stats,
@@ -493,46 +486,50 @@ class MILEnvDDPTrainer(PPOTrainer):
 
                 count_steps_delta = 0
 
-
-                inner_action_loss = []
-                inner_dist_entropy = []
-                with torch.backends.cudnn.flags(enabled=False):
-                    with higher.innerloop_ctx(self.actor_critic, self.agent.inner_optimizer,
-                                              copy_initial_weights=False) as (fmodel, diffopt):
-                        # Make several gradient updates so the agent can adapt to trajectories that make it to the goal
-                        # INNER UPDATE LOOP
-                        for i in range(self.config.META.MIL.num_gradient_updates):
-                            count_steps_delta = self._make_rollouts(il_cfg, count_steps_delta)
-                            t_update_model = time.time()
-                            self.agent.train()
-                            (
-                                action_loss,
-                                inner_rnn_hidden_states,
-                                dist_entropy,
-                                _,
-                            ) = self.agent.inner_update(self.rollouts, fmodel, diffopt)
-
-                            self.rollouts.after_update(inner_rnn_hidden_states)
-                            self.pth_time += time.time() - t_update_model
-
-                            inner_action_loss.append(action_loss)
-                            inner_dist_entropy.append(dist_entropy)
-
-                        # OUTER UPDATE
-                        count_steps_delta = self._make_rollouts(il_cfg, count_steps_delta)
-                        t_update_model = time.time()
-
-                        self.agent.train()
-
+                # Make several gradient updates so the agent can adapt to trajectories that make it to the goal
+                # INNER UPDATE LOOP
+                self.agent.train()
+                total_inner_action_loss = 0.0
+                total_inner_dist_entropy = 0.0
+                total_inner_total_loss = 0.0
+                total_outer_total_loss = 0.0
+                total_outer_dist_entropy = 0.0
+                total_outer_action_loss = 0.0
+                for _ in range(self.config.META.MIL.num_gradient_updates):
+                    # TODO ONLY ONE UPDATE FOR THE MOMENT IF NOT IT DOESN'T WORK
+                    count_steps_delta = self._make_rollouts(il_cfg, count_steps_delta)
+                    adapt_tasks_generator = self.rollouts.adapt_recurrent_generator(il_cfg.num_mini_batch)
+                    valid_tasks_generator = self.rollouts.valid_recurrent_generator(il_cfg.num_mini_batch)
+                    hidden_states = []
+                    for adapt_task, valid_task in zip(adapt_tasks_generator, valid_tasks_generator):
+                        learner = self.agent.actor_critic.clone()
                         (
-                            outer_action_loss,
-                            outer_rnn_hidden_states,
+                            inner_total_loss,
+                            rnn_hidden_states,
+                            inner_dist_entropy,
+                            inner_action_loss
+                        ) = self.agent.caluclate_loss(adapt_task, learner)
+                        learner.adapt(inner_total_loss)
+                        (
+                            outer_total_loss,
+                            rnn_hidden_states,
                             outer_dist_entropy,
-                            _,
-                        ) = self.agent.outer_update(self.rollouts, fmodel)
+                            outer_action_loss
+                        ) = self.agent.caluclate_loss(adapt_task, learner, rnn_hidden_states)
+                        hidden_states.append(rnn_hidden_states)
+                    total_inner_action_loss += inner_action_loss
+                    total_inner_dist_entropy += inner_dist_entropy
+                    total_inner_total_loss += inner_total_loss
+                    total_outer_total_loss += outer_total_loss
+                    total_outer_dist_entropy += outer_dist_entropy
+                    total_outer_action_loss += outer_action_loss
+                    hidden_states = torch.cat(hidden_states, dim=0).detach()
 
-                        self.rollouts.after_update(outer_rnn_hidden_states)
-                        self.pth_time += time.time() - t_update_model
+                    total_outer_total_loss /= self.config.NUM_ENVIRONMENTS
+                    # OUTER UPDATE
+                    self.agent.outer_optimizer.zero_grad()
+                    total_outer_total_loss.backward()
+                    self.agent.outer_optimizer.step()
 
                 # Sample new tasks for the next update
                 self.sample_and_set_tasks()
@@ -540,15 +537,15 @@ class MILEnvDDPTrainer(PPOTrainer):
                 if self._is_distributed:
                     self.num_rollouts_done_store.add("num_done", self.config.META.MIL.num_gradient_updates + 1)
 
-                # for i, episode in enumerate(self.envs.current_episodes()):
-                #     logger.info(
-                #         "Environment: {}, Current scene: {}, Current goal {}, Current task_id {}, episode: {}".format(
-                #             i,
-                #             episode.scene_id.split(".")[-3].split("/")[-1],
-                #             episode.object_category,
-                #             episode.goals_key,
-                #             episode.episode_id)
-                #         )
+                for i, episode in enumerate(self.envs.current_episodes()):
+                    logger.info(
+                        "Environment: {}, Current scene: {}, Current goal {}, Current task_id {}, episode: {}".format(
+                            i,
+                            episode.scene_id.split(".")[-3].split("/")[-1],
+                            episode.object_category,
+                            episode.goals_key,
+                            episode.episode_id)
+                    )
 
                 if il_cfg.use_linear_lr_decay:
                     lr_scheduler.step()  # type: ignore
