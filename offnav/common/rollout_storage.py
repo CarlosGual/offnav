@@ -510,7 +510,7 @@ class MILRolloutStorage:
                 )
             )
         for inds in torch.arange(num_environments).chunk(num_mini_batch):
-            batch = self.buffers[0: self.current_rollout_step_idx/2, inds]
+            batch = self.buffers[0:64, inds]
             batch["recurrent_hidden_states"] = self.recurrent_hidden_states[0:1, inds]
             yield batch.map(lambda v: v.flatten(0, 1))
 
@@ -532,6 +532,6 @@ class MILRolloutStorage:
                 )
             )
         for inds in torch.arange(num_environments).chunk(num_mini_batch):
-            batch = self.buffers[self.current_rollout_step_idx/2:self.current_rollout_step_idx, inds]
+            batch = self.buffers[65:128, inds]
             batch["recurrent_hidden_states"] = self.recurrent_hidden_states[0:1, inds]
             yield batch.map(lambda v: v.flatten(0, 1))

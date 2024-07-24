@@ -488,7 +488,7 @@ class MILEnvDDPTrainer(PPOTrainer):
 
                 # Make several gradient updates so the agent can adapt to trajectories that make it to the goal
                 # INNER UPDATE LOOP
-                self.agent.train()
+                self.agent.actor_critic.train()
                 total_inner_action_loss = 0.0
                 total_inner_dist_entropy = 0.0
                 total_inner_total_loss = 0.0
@@ -508,14 +508,14 @@ class MILEnvDDPTrainer(PPOTrainer):
                             rnn_hidden_states,
                             inner_dist_entropy,
                             inner_action_loss
-                        ) = self.agent.caluclate_loss(adapt_task, learner)
+                        ) = self.agent.calculate_loss(adapt_task, learner)
                         learner.adapt(inner_total_loss)
                         (
                             outer_total_loss,
                             rnn_hidden_states,
                             outer_dist_entropy,
                             outer_action_loss
-                        ) = self.agent.caluclate_loss(adapt_task, learner, rnn_hidden_states)
+                        ) = self.agent.calculate_valid_loss(adapt_task, learner, rnn_hidden_states)
                         hidden_states.append(rnn_hidden_states)
                     total_inner_action_loss += inner_action_loss
                     total_inner_dist_entropy += inner_dist_entropy
@@ -524,7 +524,7 @@ class MILEnvDDPTrainer(PPOTrainer):
                     total_outer_dist_entropy += outer_dist_entropy
                     total_outer_action_loss += outer_action_loss
                     hidden_states = torch.cat(hidden_states, dim=0).detach()
-
+                    self.rollouts.after_update(hidden_states)
                     total_outer_total_loss /= self.config.NUM_ENVIRONMENTS
                     # OUTER UPDATE
                     self.agent.outer_optimizer.zero_grad()
