@@ -15,6 +15,8 @@ import numpy as np
 import torch
 import tqdm
 from gym import spaces
+from torchviz import make_dot
+
 from habitat import Config, logger
 from habitat.utils import profiling_wrapper
 from habitat.utils.render_wrapper import overlay_frame
@@ -26,7 +28,7 @@ from habitat_baselines.common.obs_transformers import (
     get_active_obs_transforms,
 )
 from habitat_baselines.common.tensorboard_utils import TensorboardWriter, get_writer
-from habitat_baselines.rl.ddppo.ddp_utils import (
+from offnav.common.ddp_utils import (
     EXIT,
     add_signal_handlers,
     init_distrib_tsubame,
@@ -488,48 +490,55 @@ class MILEnvDDPTrainer(PPOTrainer):
 
                 # Make several gradient updates so the agent can adapt to trajectories that make it to the goal
                 # INNER UPDATE LOOP
-                self.agent.actor_critic.train()
                 total_inner_action_loss = 0.0
                 total_inner_dist_entropy = 0.0
                 total_inner_total_loss = 0.0
                 total_outer_total_loss = 0.0
                 total_outer_dist_entropy = 0.0
                 total_outer_action_loss = 0.0
-                for _ in range(self.config.META.MIL.num_gradient_updates):
-                    # TODO ONLY ONE UPDATE FOR THE MOMENT IF NOT IT DOESN'T WORK
-                    count_steps_delta = self._make_rollouts(il_cfg, count_steps_delta)
-                    adapt_tasks_generator = self.rollouts.adapt_recurrent_generator(il_cfg.num_mini_batch)
-                    valid_tasks_generator = self.rollouts.valid_recurrent_generator(il_cfg.num_mini_batch)
-                    hidden_states = []
-                    for adapt_task, valid_task in zip(adapt_tasks_generator, valid_tasks_generator):
-                        learner = self.agent.actor_critic.clone()
-                        (
-                            inner_total_loss,
-                            rnn_hidden_states,
-                            inner_dist_entropy,
-                            inner_action_loss
-                        ) = self.agent.calculate_loss(adapt_task, learner)
-                        learner.adapt(inner_total_loss)
-                        (
-                            outer_total_loss,
-                            rnn_hidden_states,
-                            outer_dist_entropy,
-                            outer_action_loss
-                        ) = self.agent.calculate_valid_loss(adapt_task, learner, rnn_hidden_states)
-                        hidden_states.append(rnn_hidden_states)
-                    total_inner_action_loss += inner_action_loss
-                    total_inner_dist_entropy += inner_dist_entropy
-                    total_inner_total_loss += inner_total_loss
-                    total_outer_total_loss += outer_total_loss
-                    total_outer_dist_entropy += outer_dist_entropy
-                    total_outer_action_loss += outer_action_loss
-                    hidden_states = torch.cat(hidden_states, dim=0).detach()
-                    self.rollouts.after_update(hidden_states)
-                    total_outer_total_loss /= self.config.NUM_ENVIRONMENTS
-                    # OUTER UPDATE
-                    self.agent.outer_optimizer.zero_grad()
-                    total_outer_total_loss.backward()
-                    self.agent.outer_optimizer.step()
+                # TODO ONLY ONE UPDATE FOR THE MOMENT IF NOT IT DOESN'T WORK
+                count_steps_delta = self._make_rollouts(il_cfg, count_steps_delta)
+                adapt_tasks_generator = self.rollouts.adapt_recurrent_generator(il_cfg.num_mini_batch)
+                valid_tasks_generator = self.rollouts.valid_recurrent_generator(il_cfg.num_mini_batch)
+                hidden_states = []
+
+                self.agent.actor_critic.train()
+
+                learner = self.agent.actor_critic.clone()
+
+                for adapt_task, valid_task in zip(adapt_tasks_generator, valid_tasks_generator):
+
+                    (
+                        inner_total_loss,
+                        rnn_hidden_states,
+                        inner_dist_entropy,
+                        inner_action_loss
+                    ) = self.agent.calculate_loss(adapt_task, learner)
+
+                    learner.adapt(inner_total_loss)
+
+                    (
+                        outer_total_loss,
+                        rnn_hidden_states,
+                        outer_dist_entropy,
+                        outer_action_loss
+                    ) = self.agent.calculate_valid_loss(adapt_task, learner, rnn_hidden_states.detach())
+                    hidden_states.append(rnn_hidden_states)
+
+                total_inner_action_loss += inner_action_loss
+                total_inner_dist_entropy += inner_dist_entropy
+                total_inner_total_loss += inner_total_loss
+                total_outer_total_loss += outer_total_loss
+                total_outer_dist_entropy += outer_dist_entropy
+                total_outer_action_loss += outer_action_loss
+                hidden_states = torch.cat(hidden_states, dim=0).detach()
+                self.rollouts.after_update(hidden_states)
+                total_outer_total_loss /= self.config.NUM_ENVIRONMENTS
+
+                # OUTER UPDATE
+                self.agent.outer_optimizer.zero_grad()
+                total_outer_total_loss.backward()
+                self.agent.outer_optimizer.step()
 
                 # Sample new tasks for the next update
                 self.sample_and_set_tasks()
@@ -537,15 +546,15 @@ class MILEnvDDPTrainer(PPOTrainer):
                 if self._is_distributed:
                     self.num_rollouts_done_store.add("num_done", self.config.META.MIL.num_gradient_updates + 1)
 
-                for i, episode in enumerate(self.envs.current_episodes()):
-                    logger.info(
-                        "Environment: {}, Current scene: {}, Current goal {}, Current task_id {}, episode: {}".format(
-                            i,
-                            episode.scene_id.split(".")[-3].split("/")[-1],
-                            episode.object_category,
-                            episode.goals_key,
-                            episode.episode_id)
-                    )
+                # for i, episode in enumerate(self.envs.current_episodes()):
+                #     logger.info(
+                #         "Environment: {}, Current scene: {}, Current goal {}, Current task_id {}, episode: {}".format(
+                #             i,
+                #             episode.scene_id.split(".")[-3].split("/")[-1],
+                #             episode.object_category,
+                #             episode.goals_key,
+                #             episode.episode_id)
+                #     )
 
                 if il_cfg.use_linear_lr_decay:
                     lr_scheduler.step()  # type: ignore
@@ -553,10 +562,10 @@ class MILEnvDDPTrainer(PPOTrainer):
                 self.num_updates_done += 1
                 losses = self._coalesce_post_step(
                     dict(
-                        inner_action_loss=np.mean(inner_action_loss),
-                        inner_entropy=np.mean(inner_dist_entropy),
-                        outer_action_loss=outer_action_loss,
-                        outer_entropy=outer_dist_entropy,
+                        inner_action_loss=inner_action_loss.detach(),
+                        inner_entropy=inner_dist_entropy.detach(),
+                        outer_action_loss=outer_action_loss.detach(),
+                        outer_entropy=outer_dist_entropy.detach(),
                     ),
                     count_steps_delta,
                 )

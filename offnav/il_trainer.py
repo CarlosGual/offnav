@@ -26,7 +26,7 @@ from habitat_baselines.common.obs_transformers import (
     get_active_obs_transforms,
 )
 from habitat_baselines.common.tensorboard_utils import TensorboardWriter, get_writer
-from habitat_baselines.rl.ddppo.ddp_utils import (
+from offnav.common.ddp_utils import (
     EXIT,
     add_signal_handlers,
     init_distrib_tsubame,

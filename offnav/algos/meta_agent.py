@@ -6,7 +6,7 @@ import copy
 
 from typing import Optional, Tuple, Any
 import learn2learn as l2l
-import higher
+# import higher
 import numpy as np
 import torch
 from habitat import logger
@@ -30,11 +30,16 @@ class MILAgent(nn.Module):
             wd: Optional[float] = None,
             outer_optimizer: Optional[str] = "AdamW",
             entropy_coef: Optional[float] = 0.0,
+
     ) -> None:
 
         super().__init__()
 
-        self.actor_critic = l2l.algorithms.MAML(actor_critic, lr=inner_lr, allow_nograd=True, allow_unused=True)
+        self.actor_critic = l2l.algorithms.MAML(actor_critic,
+                                                lr=inner_lr,
+                                                first_order=True,
+                                                allow_nograd=False,
+                                                allow_unused=False)
 
         self.num_mini_batch = num_mini_batch
 
