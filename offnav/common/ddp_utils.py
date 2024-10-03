@@ -330,9 +330,9 @@ def init_distrib_tsubame(
             os.environ.get("MAIN_PORT_RANGE", DEFAULT_PORT_RANGE)
         )
     main_addr = os.environ.get("MASTER_ADDR", DEFAULT_MAIN_ADDR)
-
+    # using default port for dgx
     tcp_store = distrib.TCPStore(  # type: ignore
-        main_addr, main_port, world_size, world_rank == 0
+        main_addr, DEFAULT_PORT, world_size, world_rank == 0
     )
     distrib.init_process_group(
         backend, store=tcp_store, rank=world_rank, world_size=world_size

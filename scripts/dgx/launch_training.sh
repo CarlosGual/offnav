@@ -1,42 +1,58 @@
 #!/bin/bash
 
-# Get number of GPUs
-if [ -z "$CUDA_VISIBLE_DEVICES" ]
-then
-    echo "CUDA_VISIBLE_DEVICES is not set"
-else
-    IFS=',' read -ra ADDR <<< "$CUDA_VISIBLE_DEVICES"
-    num_gpus=${#ADDR[@]}
-    echo "Number of GPUs: $num_gpus"
-fi
-num_cpus=$(nproc)
+# ******************* Setup dirs *************************************************
+setup="setup2"
+exp_name="pruebas_first_order"
 
-export GLOG_minloglevel=2
-export MAGNUM_LOG=quiet
-export HABITAT_SIM_LOG=quiet
-export OMP_NUM_THREADS=$((num_cpus/num_gpus))
-
-setup="full"
-exp_name="cyclic_lr_navrl"
-
-config="configs/experiments/off_objectnav.yaml"
-DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd" # _${setup}"
+CONFIG="configs/experiments/mil_objectnav.yaml"
+DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_${setup}"
 TENSORBOARD_DIR="tb/${exp_name}_${setup}"
 CHECKPOINT_DIR="data/checkpoints/offnav/${exp_name}_${setup}"
 
+# ******************* Set nvidia-smi to log GPU usage ******************************
+mkdir -p "$TENSORBOARD_DIR"
+mkdir -p "$CHECKPOINT_DIR"
 
-echo "In ObjectNav OFFNAV"
-python -u -m torch.distributed.launch \
-    --use_env \
-    --nproc_per_node $num_gpus \
-    run.py \
-    --exp-config $config \
+nvidia-smi --query-gpu=timestamp,name,gpu_bus_id,utilization.gpu,utilization.memory,memory.used,memory.free \
+    --format=csv -l 1 > "${TENSORBOARD_DIR}"/gpu-usage.log &
+NVIDIA_SMI_PID=$!
+
+# ******************* Setup number of cpus and gpus *******************************
+NUM_CPUS=$(nproc)
+NGPU_PER_NODE=$(nvidia-smi -L | wc -l)
+NHOSTS=1
+
+# ******************* Export variables ********************************************
+export CONFIG
+export DATA_PATH
+export TENSORBOARD_DIR
+export CHECKPOINT_DIR
+export GLOG_minloglevel=2
+export MAGNUM_LOG=quiet
+export HABITAT_SIM_LOG=quiet
+export LOG_DIR
+export NGPU_PER_NODE
+export OMP_NUM_THREADS=$((NUM_CPUS/NGPU_PER_NODE))
+
+# ******************* Run the training script *******************************
+echo "Getting number of cpus and gpus per node..."
+echo "$NUM_CPUS", "$NGPU_PER_NODE", $OMP_NUM_THREADS
+echo "Running meta imitation learning..."
+
+torchrun --nnodes="${NHOSTS}" \
+  --nproc_per_node="${NGPU_PER_NODE}" \
+  --max_restarts 3 \
+  run.py \
+    --exp-config "$CONFIG" \
     --run-type train \
-    TENSORBOARD_DIR $TENSORBOARD_DIR \
-    CHECKPOINT_FOLDER $CHECKPOINT_DIR \
-    NUM_UPDATES 400000 \
+    TENSORBOARD_DIR "$TENSORBOARD_DIR" \
+    CHECKPOINT_FOLDER "$CHECKPOINT_DIR" \
+    NUM_UPDATES 50000 \
     WANDB_ENABLED True \
-    NUM_ENVIRONMENTS 4 \
-    OFFLINE.IQL.num_mini_batch 1 \
+    NUM_ENVIRONMENTS 8 \
+    IL.BehaviorCloning.num_mini_batch 2 \
     RL.DDPPO.force_distributed True \
-    TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz" \
+    RL.DDPPO.distrib_backend 'NCCL' \
+    TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz"
+
+kill $NVIDIA_SMI_PID

@@ -48,7 +48,7 @@ POLICY:
   CRITIC:
     no_critic: True
   STATE_ENCODER:
-    rnn_type: "LSTM"
+    rnn_type: "GRU"
   RGB_ENCODER:
     backbone: resnet18
 #    pretrained_encoder: "data/visual_encoders/omnidata_DINO_02.pth"

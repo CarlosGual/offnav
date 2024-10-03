@@ -1,5 +1,5 @@
 # Base image
-FROM nvidia/cudagl:10.1-devel-ubuntu16.04
+FROM nvidia/cudagl:11.2.2-devel-ubuntu20.04
 
 # Setup basic packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -47,15 +47,14 @@ RUN mkdir code/
 USER carlos
 
 # Conda environment
-RUN conda create -n habitat python=3.7 cmake=3.14.0
+RUN conda create -n habitat python=3.8 cmake=3.14.0
 
 # Setup habitat-sim
 RUN git clone --depth 1 --branch v0.2.2 https://github.com/facebookresearch/habitat-sim.git
 RUN /bin/bash -c ". activate habitat; cd habitat-sim; pip install -r requirements.txt; python setup.py install --headless"
 
 # Install torch
-RUN /bin/bash -c ". activate habitat; pip install torch==1.12.1+cu113 torchvision==0.13.1+cu113 torchaudio==0.12.1 --extra-index-url  \
-    https://download.pytorch.org/whl/cu113"
+RUN /bin/bash -c ". activate habitat; pip3 install torch torchvision torchaudio"
 
 # This is to avoid breaking the offnav instalation
 RUN /bin/bash -c ". activate habitat; pip install gym==0.22.0 urllib3==1.25.11"
@@ -64,8 +63,8 @@ RUN /bin/bash -c ". activate habitat; pip install gym==0.22.0 urllib3==1.25.11"
 RUN git clone https://github.com/carlosgual/habitat-lab.git
 RUN /bin/bash -c ". activate habitat; cd habitat-lab; python setup.py develop --all"
 
-# Install wandb
-RUN /bin/bash -c ". activate habitat; pip install wandb"
+# Install wandb and other aditional libraries
+RUN /bin/bash -c ". activate habitat; pip install wandb learn2learn; conda install protobuf"
 
 # Silence habitat-sim logs
 ENV GLOG_minloglevel=2

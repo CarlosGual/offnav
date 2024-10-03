@@ -14,8 +14,8 @@ import copy
 import numpy as np
 import torch
 import tqdm
+import wandb
 from gym import spaces
-from torchviz import make_dot
 
 from habitat import Config, logger
 from habitat.utils import profiling_wrapper
@@ -503,6 +503,7 @@ class MILEnvDDPTrainer(PPOTrainer):
                 hidden_states = []
 
                 self.agent.actor_critic.train()
+                wandb.watch(self.agent.actor_critic, log="all")
 
                 learner = self.agent.actor_critic.clone()
 
