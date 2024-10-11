@@ -85,16 +85,25 @@ class MILAgent(nn.Module):
     def forward(self, *x):
         raise NotImplementedError
 
-    def calculate_loss(self, task, learner):
+    def calculate_loss(self, task, learner, hidden_states=None):
         cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction="none")
-        (logits, rnn_hidden_states, dist_entropy) = learner(
-            task["observations"],
-            task["recurrent_hidden_states"],
-            task["prev_actions"],
-            task["masks"],
-        )
+        if hidden_states is None:
+            (logits, rnn_hidden_states, dist_entropy) = learner(
+                task["observations"],
+                task["recurrent_hidden_states"],
+                task["prev_actions"],
+                task["masks"],
+            )
+            N = task["recurrent_hidden_states"].shape[0]
+        else:
+            (logits, rnn_hidden_states, dist_entropy) = learner(
+                task["observations"],
+                hidden_states,
+                task["prev_actions"],
+                task["masks"],
+            )
+            N = hidden_states.shape[0]
 
-        N = task["recurrent_hidden_states"].shape[0]
         T = task["actions"].shape[0] // N
         actions_batch = task["actions"].view(T, N, -1)
         logits = logits.view(T, N, -1)

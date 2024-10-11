@@ -8,11 +8,10 @@ TENSORBOARD_DIR: "data/checkpoints/validate_learn2learn"
 VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
 EVAL_CKPT_PATH_DIR: "data/new_checkpoints_dgx_lowerlr_3e-5"
-NUM_ENVIRONMENTS: 2
-CHECKPOINT_FOLDER: "data/checkpoints/validate_learn2learn"
+NUM_ENVIRONMENTS: 4 # Equivalent to num_tasks
 TRAINER_NAME: "pirlnav-mil"
 SENSORS: ["RGB_SENSOR"]
-NUM_UPDATES: 10000
+NUM_UPDATES: 10000 # num outer updates
 LOG_INTERVAL: 10
 WANDB_ENABLED: False
 NUM_CHECKPOINTS: 20
@@ -29,7 +28,7 @@ IL:
   BehaviorCloning:
     encoder_lr: 0.0001
     lr: 0.0001
-    num_mini_batch: 2
+    num_mini_batch: 2 # With this we control how many tasks we have per outer update
   STATE_ENCODER:
     rnn_type: "GRU"
 
@@ -42,7 +41,7 @@ RL:
 
 META:
   MIL:
-    num_gradient_updates: 1
+    num_gradient_updates: 3
 
 POLICY:
   CRITIC:

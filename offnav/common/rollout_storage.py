@@ -357,6 +357,7 @@ class MILRolloutStorage:
 
     def __init__(
             self,
+            numgrads_updates,
             numsteps,
             num_envs,
             observation_space,
@@ -369,8 +370,10 @@ class MILRolloutStorage:
     ):
         self.buffers = TensorDict()
         self.buffers["observations"] = TensorDict()
-        # To store two trayectories of lenght numsteps/2
-        numsteps *= 2
+        self.num_steps_original = numsteps # to store the original number of steps per episode
+        self.num_grad_updates = numgrads_updates
+        # To store num grad trayectories of lenght numsteps/num grad + 1 for the valid task
+        numsteps *= numgrads_updates + 1
 
         for sensor in observation_space.spaces:
             self.buffers["observations"][sensor] = torch.from_numpy(
@@ -494,6 +497,7 @@ class MILRolloutStorage:
 
     def adapt_recurrent_generator(self, num_mini_batch) -> Iterator[TensorDict]:
         num_environments = self.buffers["actions"].size(1)
+        num_grad_updates = self.num_grad_updates
         assert num_environments >= num_mini_batch, (
             "Trainer requires the number of environments ({}) "
             "to be greater than or equal to the number of "
@@ -510,9 +514,13 @@ class MILRolloutStorage:
                 )
             )
         for inds in torch.arange(num_environments).chunk(num_mini_batch):
-            batch = self.buffers[0:64, inds]
+            batch = self.buffers[0:self.numsteps-self.num_steps_original, inds]
             batch["recurrent_hidden_states"] = self.recurrent_hidden_states[0:1, inds]
-            yield batch.map(lambda v: v.flatten(0, 1))
+            def generate_tasks_for_gradient_update(num_grad_updates):
+                for i in range(num_grad_updates):
+                    task = batch[self.num_steps_original*i:self.num_steps_original*(i+1)]
+                    yield task.map(lambda v: v.flatten(0, 1))
+            yield generate_tasks_for_gradient_update(num_grad_updates)
 
     def valid_recurrent_generator(self, num_mini_batch) -> Iterator[TensorDict]:
         num_environments = self.buffers["actions"].size(1)
@@ -532,6 +540,6 @@ class MILRolloutStorage:
                 )
             )
         for inds in torch.arange(num_environments).chunk(num_mini_batch):
-            batch = self.buffers[65:128, inds]
+            batch = self.buffers[self.numsteps-self.num_steps_original+1:self.numsteps, inds]
             batch["recurrent_hidden_states"] = self.recurrent_hidden_states[0:1, inds]
             yield batch.map(lambda v: v.flatten(0, 1))
