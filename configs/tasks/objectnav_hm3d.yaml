@@ -58,8 +58,8 @@ TASK:
     SUCCESS_DISTANCE: 0.1
 
 DATASET:
-  TYPE: ObjectNav-v2
+  TYPE: ObjectNav-meta
   SPLIT: train
-  DATA_PATH: "data/datasets/objectnav/objectnav_hm3d_hd_setup2/{split}/{split}.json.gz"
+  DATA_PATH: "data/datasets/objectnav/objectnav_hm3d_hd/{split}/{split}.json.gz"
   SCENES_DIR: "data/scene_datasets/"
   MAX_EPISODE_STEPS: 500

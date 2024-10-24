@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # ******************* Setup dirs *************************************************
-setup="setup2"
-exp_name="pruebas_first_order"
+setup="setup3"
+exp_name="pruebas_3_gradient_updates_tasks_per_batch"
 
 CONFIG="configs/experiments/mil_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_${setup}"
@@ -49,8 +49,10 @@ torchrun --nnodes="${NHOSTS}" \
     CHECKPOINT_FOLDER "$CHECKPOINT_DIR" \
     NUM_UPDATES 50000 \
     WANDB_ENABLED True \
-    NUM_ENVIRONMENTS 8 \
-    IL.BehaviorCloning.num_mini_batch 2 \
+    NUM_ENVIRONMENTS 48 \
+    IL.BehaviorCloning.num_mini_batch 8 \
+    META.MIL.num_tasks 8 \
+    META.MIL.num_gradient_updates 3 \
     RL.DDPPO.force_distributed True \
     RL.DDPPO.distrib_backend 'NCCL' \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz"

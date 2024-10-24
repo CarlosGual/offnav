@@ -385,16 +385,22 @@ class MetaVectorEnv:
         return results
 
     def sample_tasks(self, num_tasks: int):
-        for write_fn in self._connection_write_fns:
-            write_fn((CALL_COMMAND, ("sample_tasks", {"num_tasks": num_tasks})))
+        inds = torch.arange(self._num_envs).chunk(num_tasks)
+        assert len(inds) == num_tasks
+        for idx in inds:
+            self._connection_write_fns[idx[0]]((CALL_COMMAND, ("sample_tasks", {"num_tasks": 1})))
         results = []
-        for read_fn in self._connection_read_fns:
-            results.append(read_fn()[0])
+        for idx in inds:
+            results.append(self._connection_read_fns[idx[0]]()[0])
         return results
 
     def set_tasks(self, tasks: List[str]):
-        for i, write_fn in enumerate(self._connection_write_fns):
-            write_fn((CALL_COMMAND, ("set_task", {"task_id": tasks[i]})))
+        mini_batch = len(tasks)
+        inds = torch.arange(self._num_envs).chunk(mini_batch)
+        assert len(inds) == len(tasks)
+        for idx, task in zip(inds, tasks):
+            for index_env in idx:
+                self._connection_write_fns[index_env]((CALL_COMMAND, ("set_task", {"task_id": task})))
         results = []
         for read_fn in self._connection_read_fns:
             results.append(read_fn())

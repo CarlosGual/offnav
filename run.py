@@ -136,7 +136,7 @@ def run_exp(exp_config: str, run_type: str, opts=None) -> None:
                        sync_tensorboard=True,
                        config=config,
                        entity='gram-uah',
-                       tags=[f'{run_type}', 'tsubame'],
+                       tags=[f'{run_type}', 'dgx'],
                        id=config.WANDB_UNIQUE_ID,
                        resume="allow")
     execute_exp(config, run_type)

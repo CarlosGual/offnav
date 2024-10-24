@@ -7,10 +7,9 @@
 import os
 import random
 from typing import Any, List, Type, Union
+from torch import arange
 
-import habitat
-import offnav
-from habitat import Config, Env, RLEnv, VectorEnv, logger, make_dataset
+from habitat import Config, Env, RLEnv, logger, make_dataset
 from offnav.envs.meta_vector_env import MetaVectorEnv, MetaThreadedVectorEnv
 
 
@@ -58,6 +57,10 @@ def construct_meta_envs(
     """
 
     num_environments = config.NUM_ENVIRONMENTS
+    num_mini_batch = config.IL.BehaviorCloning.num_mini_batch
+    num_tasks = config.META.MIL.num_tasks
+    assert num_mini_batch == num_tasks, "num_tasks must be equal to num_environments / num_mini_batch"
+    # Num tasks will determine how to distribute the scenes along the environments
     configs = []
     env_classes = [env_class for _ in range(num_environments)]
     dataset = make_dataset(config.TASK_CONFIG.DATASET.TYPE)
@@ -85,9 +88,13 @@ def construct_meta_envs(
             for split in scene_splits:
                 split.append(scene)
     else:
+        inds = arange(num_environments).chunk(num_mini_batch)
+        assert len(inds) == num_tasks
         for idx, scene in enumerate(scenes):
-            scene_splits[idx % len(scene_splits)].append(scene)
-        assert sum(map(len, scene_splits)) == len(scenes)
+            task_idx = idx % num_tasks
+            for split_idx in inds[task_idx]:
+                scene_splits[split_idx].append(scene)
+        assert sum(map(len, scene_splits)) == len(scenes)*num_tasks
 
     for i in range(num_environments):
         proc_config = config.clone()

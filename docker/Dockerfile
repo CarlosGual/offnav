@@ -29,7 +29,7 @@ RUN curl -L -ko ~/miniconda.sh -O  https://repo.continuum.io/miniconda/Miniconda
     rm ~/miniconda.sh &&\
     /opt/conda/bin/conda install numpy pyyaml scipy ipython mkl mkl-include &&\
     /opt/conda/bin/conda clean -ya
-ENV PATH /opt/conda/bin:$PATH
+ENV PATH=/opt/conda/bin:$PATH
 
 # Install cmake
 RUN wget https://github.com/Kitware/CMake/releases/download/v3.14.0/cmake-3.14.0-Linux-x86_64.sh

@@ -4,11 +4,10 @@ ENV_NAME: "SimpleMetaRLEnv"
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
 VIDEO_OPTION: []
-TENSORBOARD_DIR: "data/checkpoints/validate_learn2learn"
+TENSORBOARD_DIR: "data/checkpoints/pruebas_first_order_setup2"
 VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
-EVAL_CKPT_PATH_DIR: "data/new_checkpoints_dgx_lowerlr_3e-5"
-NUM_ENVIRONMENTS: 4 # Equivalent to num_tasks
+EVAL_CKPT_PATH_DIR: "data/checkpoints/pruebas_first_order_setup2"
 TRAINER_NAME: "pirlnav-mil"
 SENSORS: ["RGB_SENSOR"]
 NUM_UPDATES: 10000 # num outer updates
@@ -21,6 +20,7 @@ FORCE_TORCH_SINGLE_THREADED: True
 
 EVAL:
   SPLIT: "val"
+  USE_CKPT_CONFIG: False
 
 IL:
   POLICY:
@@ -32,16 +32,19 @@ IL:
   STATE_ENCODER:
     rnn_type: "GRU"
 
+META:
+  MIL:
+    num_gradient_updates: 3
+    num_tasks: 2
+
+NUM_ENVIRONMENTS: 4 # Equivalent to num_tasks
+
 RL:
   SUCCESS_REWARD: 2.5
   SLACK_REWARD: -1e-3
   DDPPO:
     force_distributed: True
     pretrained: False
-
-META:
-  MIL:
-    num_gradient_updates: 3
 
 POLICY:
   CRITIC:

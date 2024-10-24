@@ -9,6 +9,7 @@ import os
 import random
 import time
 from collections import defaultdict, deque
+from distutils.command.config import config
 from typing import Any, Dict, List
 import copy
 import numpy as np
@@ -19,6 +20,7 @@ from gym import spaces
 
 from habitat import Config, logger
 from habitat.utils import profiling_wrapper
+from habitat.utils.env_utils import construct_envs
 from habitat.utils.render_wrapper import overlay_frame
 from habitat.utils.visualizations.utils import observations_to_image
 from habitat_baselines.common.baseline_registry import baseline_registry
@@ -76,6 +78,16 @@ class MILEnvDDPTrainer(PPOTrainer):
             workers_ignore_signals=is_tsubame_batch_job(),
         )
 
+    def _init_eval_envs(self, config=None):
+        if config is None:
+            config = self.config
+
+        self.envs = construct_envs(
+            config,
+            get_env_class("SimpleRLEnv"),
+            workers_ignore_signals=is_tsubame_batch_job(),
+        )
+
     def _setup_actor_critic_agent(self, il_cfg: Config) -> None:
         r"""Sets up actor critic and agent for IL.
 
@@ -113,7 +125,7 @@ class MILEnvDDPTrainer(PPOTrainer):
             entropy_coef=il_cfg.entropy_coef,
         )
 
-    def sample_and_set_tasks(self):
+    def sample_and_set_tasks(self, num_tasks: int):
         tasks = self.envs.sample_tasks(self.config.META.MIL.num_tasks)
         self.envs.set_tasks(tasks)
 
@@ -257,8 +269,9 @@ class MILEnvDDPTrainer(PPOTrainer):
             discrete_actions=discrete_actions,
         )
         self.rollouts.to(self.device)
-
-        self.sample_and_set_tasks()
+        assert il_cfg.num_mini_batch == self.config.META.MIL.num_tasks, "Number of tasks must be equal to the number of environments divided by the number of mini-batches"
+        num_tasks = self.config.META.MIL.num_tasks
+        self.sample_and_set_tasks(num_tasks)
 
         self.current_episode_reward = torch.zeros(self.envs.num_envs, 1)
         self.running_episode_stats = dict(
@@ -321,18 +334,21 @@ class MILEnvDDPTrainer(PPOTrainer):
             buffer_index=buffer_index,
         )
 
-    def _make_rollouts(self, il_cfg: Config, meta_cfg: Config, count_steps_delta: int = 0):
+    def _make_rollouts(self, il_cfg: Config, meta_cfg: Config, count_steps_delta: int = 0, eval: bool = False):
         profiling_wrapper.range_push("inner rollouts loop")
         profiling_wrapper.range_push("_collect_rollout_step")
-
+        if eval:
+            extra_loop = 0
+        else:
+            extra_loop = 1
         self.agent.eval()
         for buffer_index in range(self._nbuffers):
             self._compute_actions_and_step_envs(buffer_index)
 
-        for step in range(il_cfg.num_steps * (meta_cfg.num_gradient_updates + 1)):
+        for step in range(il_cfg.num_steps * (meta_cfg.num_gradient_updates + extra_loop)):
             is_last_step = (
                     self.should_end_early(step + 1)
-                    or (step + 1) == il_cfg.num_steps * (meta_cfg.num_gradient_updates + 1)
+                    or (step + 1) == il_cfg.num_steps * (meta_cfg.num_gradient_updates + extra_loop)
             )
 
             for buffer_index in range(self._nbuffers):
@@ -514,11 +530,12 @@ class MILEnvDDPTrainer(PPOTrainer):
                 self.agent.outer_optimizer.step()
 
                 # Sample new tasks for the next update
-                self.sample_and_set_tasks()
+                self.sample_and_set_tasks(self.config.META.MIL.num_tasks)
 
                 if self._is_distributed:
                     self.num_rollouts_done_store.add("num_done", self.config.META.MIL.num_gradient_updates + 1)
 
+                logger.info('----------------- New batch ----------------------')
                 for i, episode in enumerate(self.envs.current_episodes()):
                     logger.info(
                         "Environment: {}, Current scene: {}, Current goal {}, Current task_id {}, episode: {}, length: {}".format(
@@ -680,7 +697,7 @@ class MILEnvDDPTrainer(PPOTrainer):
         if config.VERBOSE:
             logger.info(f"env config: {config}")
 
-        self._init_envs(config)
+        self._init_eval_envs(config)
 
         action_space = self.envs.action_spaces[0]
         if self.using_velocity_ctrl:
@@ -702,43 +719,43 @@ class MILEnvDDPTrainer(PPOTrainer):
 
         il_cfg = config.IL.BehaviorCloning
         policy_cfg = config.POLICY
+        meta_cfg = self.config.META.MIL
         self._setup_actor_critic_agent(il_cfg)
 
-        if self.agent.actor_critic.should_load_agent_state:
-            state_dict = {
-                k.replace("model.", "actor_critic."): v for k, v in ckpt_dict["state_dict"].items()
-            }
-            self.agent.load_state_dict(state_dict)
+        self.agent.load_state_dict(ckpt_dict["state_dict"])
         self.actor_critic = self.agent.actor_critic
 
-        observations = self.envs.reset()
-        batch = batch_obs(
-            observations, device=self.device, cache=self._obs_batching_cache
-        )
-        batch = apply_obs_transforms_batch(batch, self.obs_transforms)  # type: ignore
+        self._nbuffers = 2 if il_cfg.use_double_buffered_sampler else 1
 
-        current_episode_reward = torch.zeros(
-            self.envs.num_envs, 1, device="cpu"
-        )
+        obs_space = self.obs_space
+        if self._static_encoder:
+            self._encoder = self.actor_critic.net.visual_encoder
+            obs_space = spaces.Dict(
+                {
+                    "visual_features": spaces.Box(
+                        low=np.finfo(np.float32).min,
+                        high=np.finfo(np.float32).max,
+                        shape=self._encoder.output_shape,
+                        dtype=np.float32,
+                    ),
+                    **obs_space.spaces,
+                }
+            )
 
-        test_recurrent_hidden_states = torch.zeros(
-            self.config.NUM_ENVIRONMENTS,
-            self.actor_critic.net.num_recurrent_layers,
+        self.rollouts = MILRolloutStorage(
+            meta_cfg.num_gradient_updates,
+            il_cfg.num_steps,
+            self.envs.num_envs,
+            obs_space,
+            self.policy_action_space,
             policy_cfg.STATE_ENCODER.hidden_size,
-            device=self.device,
+            num_recurrent_layers=self.actor_critic.net.num_recurrent_layers,
+            is_double_buffered=il_cfg.use_double_buffered_sampler,
+            action_shape=action_shape,
+            discrete_actions=discrete_actions,
         )
-        prev_actions = torch.zeros(
-            self.config.NUM_ENVIRONMENTS,
-            *action_shape,
-            device=self.device,
-            dtype=torch.long if discrete_actions else torch.float,
-        )
-        not_done_masks = torch.zeros(
-            self.config.NUM_ENVIRONMENTS,
-            1,
-            device=self.device,
-            dtype=torch.bool,
-        )
+        self.rollouts.to(self.device)
+
         stats_episodes: Dict[
             Any, Any
         ] = {}  # dict of dicts that stores stats per episode
@@ -764,12 +781,34 @@ class MILEnvDDPTrainer(PPOTrainer):
 
         pbar = tqdm.tqdm(total=number_of_eval_episodes)
         logger.info("Sampling actions deterministically...")
-        self.actor_critic.eval()
         while (
                 len(stats_episodes) < number_of_eval_episodes
                 and self.envs.num_envs > 0
         ):
             current_episodes = self.envs.current_episodes()
+            _ = self._make_rollouts(il_cfg, meta_cfg, 0, eval=True)
+            adapt_tasks_generator = self.rollouts.adapt_recurrent_generator(il_cfg.num_mini_batch)
+            learner = self.actor_critic.clone()
+            for adapt_task in adapt_tasks_generator:
+                for num_gradient_update, task in enumerate(adapt_task):
+
+                    if num_gradient_update == 0:  # If it is the first iteration, we don't have hidden states
+                        (
+                            inner_total_loss,
+                            rnn_hidden_states,
+                            inner_dist_entropy,
+                            inner_action_loss
+                        ) = self.agent.calculate_loss(task, learner, hidden_states=None)
+
+                    elif num_gradient_update > 0:
+                        (
+                            inner_total_loss,
+                            rnn_hidden_states,
+                            inner_dist_entropy,
+                            inner_action_loss
+                        ) = self.agent.calculate_loss(task, learner, hidden_states=rnn_hidden_states)
+
+                    learner.adapt(inner_total_loss)
 
             with torch.no_grad():
                 (
