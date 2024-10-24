@@ -126,7 +126,7 @@ class MILEnvDDPTrainer(PPOTrainer):
         )
 
     def sample_and_set_tasks(self, num_tasks: int):
-        tasks = self.envs.sample_tasks(self.config.META.MIL.num_tasks)
+        tasks = self.envs.sample_tasks(num_tasks)
         self.envs.set_tasks(tasks)
 
         observations = self.envs.reset()
@@ -416,6 +416,7 @@ class MILEnvDDPTrainer(PPOTrainer):
 
         il_cfg = self.config.IL.BehaviorCloning
         meta_cfg = self.config.META.MIL
+        iter_sampled_tasks = 0
 
         with (
                 get_writer(self.config, flush_secs=self.flush_secs)
@@ -529,8 +530,14 @@ class MILEnvDDPTrainer(PPOTrainer):
                 total_outer_total_loss.backward()
                 self.agent.outer_optimizer.step()
 
-                # Sample new tasks for the next update
-                self.sample_and_set_tasks(self.config.META.MIL.num_tasks)
+                # Sample new tasks for the next update.
+                # Don't do it all the time, so we can explore a little bit
+                # more the tasks, since these are challenging tasks.
+                iter_sampled_tasks += 1
+                if iter_sampled_tasks % self.config.META.MIL.num_updates_per_sampled_tasks == 0:
+                    logger.info('----------------- NEW SAMPLE ----------------------')
+                    self.sample_and_set_tasks(self.config.META.MIL.num_tasks)
+                    iter_sampled_tasks = 0
 
                 if self._is_distributed:
                     self.num_rollouts_done_store.add("num_done", self.config.META.MIL.num_gradient_updates + 1)
@@ -538,7 +545,8 @@ class MILEnvDDPTrainer(PPOTrainer):
                 logger.info('----------------- New batch ----------------------')
                 for i, episode in enumerate(self.envs.current_episodes()):
                     logger.info(
-                        "Environment: {}, Current scene: {}, Current goal {}, Current task_id {}, episode: {}, length: {}".format(
+                        "Environment: {}, Current scene: {}, Current goal {}, Current task_id {}, episode: {}, "
+                        "length: {}".format(
                             i,
                             episode.scene_id.split(".")[-3].split("/")[-1],
                             episode.object_category,

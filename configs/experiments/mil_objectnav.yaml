@@ -36,6 +36,7 @@ META:
   MIL:
     num_gradient_updates: 3
     num_tasks: 2
+    num_updates_per_sampled_tasks: 3
 
 NUM_ENVIRONMENTS: 4 # Equivalent to num_tasks
 
