@@ -17,6 +17,7 @@ import torch
 import tqdm
 import wandb
 from gym import spaces
+from torch.xpu import device
 
 from habitat import Config, logger
 from habitat.utils import profiling_wrapper
@@ -29,6 +30,7 @@ from habitat_baselines.common.obs_transformers import (
     apply_obs_transforms_obs_space,
     get_active_obs_transforms,
 )
+from habitat_baselines.common.tensor_dict import TensorDict
 from habitat_baselines.common.tensorboard_utils import TensorboardWriter, get_writer
 from offnav.common.ddp_utils import (
     EXIT,
@@ -68,7 +70,7 @@ class MILEnvDDPTrainer(PPOTrainer):
     def __init__(self, config=None):
         super().__init__(config)
 
-    def _init_envs(self, config=None):
+    def _init_envs(self, config=None, eval=False):
         if config is None:
             config = self.config
 
@@ -76,16 +78,7 @@ class MILEnvDDPTrainer(PPOTrainer):
             config,
             get_env_class(config.ENV_NAME),
             workers_ignore_signals=is_tsubame_batch_job(),
-        )
-
-    def _init_eval_envs(self, config=None):
-        if config is None:
-            config = self.config
-
-        self.envs = construct_envs(
-            config,
-            get_env_class("SimpleRLEnv"),
-            workers_ignore_signals=is_tsubame_batch_job(),
+            eval=eval
         )
 
     def _setup_actor_critic_agent(self, il_cfg: Config) -> None:
@@ -140,6 +133,11 @@ class MILEnvDDPTrainer(PPOTrainer):
                 batch["visual_features"] = self._encoder(batch)
 
         self.rollouts.buffers["observations"][0] = batch  # type: ignore
+
+    def set_eval_task(self, task: str):
+        task = [task]
+        assert isinstance(task, list), "Task must be a list to work with meta vector env"
+        self.envs.set_tasks(task)
 
     def _init_train(self):
         resume_state = load_resume_state(self.config)
@@ -482,9 +480,9 @@ class MILEnvDDPTrainer(PPOTrainer):
 
                 self.agent.actor_critic.train()
 
-                learner = self.agent.actor_critic.clone()
-
                 for adapt_task, valid_task in zip(adapt_tasks_generator, valid_tasks_generator):
+
+                    learner = self.agent.actor_critic.clone()
 
                     for num_gradient_update, task in enumerate(adapt_task):
 
@@ -516,14 +514,15 @@ class MILEnvDDPTrainer(PPOTrainer):
                         outer_dist_entropy,
                         outer_action_loss
                     ) = self.agent.calculate_valid_loss(valid_task, learner, rnn_hidden_states.detach())
-                    hidden_states.append(rnn_hidden_states)
 
-                total_outer_total_loss += outer_total_loss
-                total_outer_dist_entropy += outer_dist_entropy
-                total_outer_action_loss += outer_action_loss
+                    hidden_states.append(rnn_hidden_states)
+                    total_outer_total_loss += outer_total_loss
+                    total_outer_dist_entropy += outer_dist_entropy
+                    total_outer_action_loss += outer_action_loss
+
                 hidden_states = torch.cat(hidden_states, dim=0).detach()
                 self.rollouts.after_update(hidden_states)
-                total_outer_total_loss /= self.config.NUM_ENVIRONMENTS
+                total_outer_total_loss /= self.config.META.MIL.num_tasks
 
                 # OUTER UPDATE
                 self.agent.outer_optimizer.zero_grad()
@@ -705,7 +704,15 @@ class MILEnvDDPTrainer(PPOTrainer):
         if config.VERBOSE:
             logger.info(f"env config: {config}")
 
-        self._init_eval_envs(config)
+        # Add replay sensors
+        config.defrost()
+        config.TASK_CONFIG.TASK.SENSORS.extend(
+            ["DEMONSTRATION_SENSOR", "INFLECTION_WEIGHT_SENSOR"]
+        )
+        config.freeze()
+
+        self._init_envs(config, eval=True)
+        tasks = self.envs.get_available_tasks()
 
         action_space = self.envs.action_spaces[0]
         if self.using_velocity_ctrl:
@@ -750,217 +757,273 @@ class MILEnvDDPTrainer(PPOTrainer):
                 }
             )
 
-        self.rollouts = MILRolloutStorage(
-            meta_cfg.num_gradient_updates,
-            il_cfg.num_steps,
-            self.envs.num_envs,
-            obs_space,
-            self.policy_action_space,
-            policy_cfg.STATE_ENCODER.hidden_size,
-            num_recurrent_layers=self.actor_critic.net.num_recurrent_layers,
-            is_double_buffered=il_cfg.use_double_buffered_sampler,
-            action_shape=action_shape,
-            discrete_actions=discrete_actions,
-        )
-        self.rollouts.to(self.device)
-
         stats_episodes: Dict[
             Any, Any
         ] = {}  # dict of dicts that stores stats per episode
 
         rgb_frames = [
-            [] for _ in range(self.config.NUM_ENVIRONMENTS)
+            [] for _ in range(self.envs.num_envs)
         ]  # type: List[List[np.ndarray]]
         if len(self.config.VIDEO_OPTION) > 0:
             os.makedirs(self.config.VIDEO_DIR, exist_ok=True)
 
-        number_of_eval_episodes = self.config.TEST_EPISODE_COUNT
-        if number_of_eval_episodes == -1:
-            number_of_eval_episodes = sum(self.envs.number_of_episodes)
-        else:
-            total_num_eps = sum(self.envs.number_of_episodes)
-            if total_num_eps < number_of_eval_episodes:
-                logger.warn(
-                    f"Config specified {number_of_eval_episodes} eval episodes"
-                    ", dataset only has {total_num_eps}."
-                )
-                logger.warn(f"Evaluating with {total_num_eps} instead.")
-                number_of_eval_episodes = total_num_eps
+        num_steps = il_cfg.num_steps
+        num_gradient_updates = meta_cfg.num_gradient_updates
 
-        pbar = tqdm.tqdm(total=number_of_eval_episodes)
-        logger.info("Sampling actions deterministically...")
-        while (
-                len(stats_episodes) < number_of_eval_episodes
-                and self.envs.num_envs > 0
-        ):
+        taskbar = tqdm.tqdm(iterable=tasks, position=0, leave=True)
+        logger.info("Iterating over all tasks in val dataset...")
+        for task in tasks:
+            self.set_eval_task(task)
+            number_of_task_episodes = sum(self.envs.number_of_episodes)
+            logger.info(f"Iterating over all episodes in task {task}...")
+            episodebar = tqdm.tqdm(total=number_of_task_episodes, position=0, leave=True, mininterval=1)
             current_episodes = self.envs.current_episodes()
-            _ = self._make_rollouts(il_cfg, meta_cfg, 0, eval=True)
-            adapt_tasks_generator = self.rollouts.adapt_recurrent_generator(il_cfg.num_mini_batch)
-            learner = self.actor_critic.clone()
-            for adapt_task in adapt_tasks_generator:
-                for num_gradient_update, task in enumerate(adapt_task):
 
-                    if num_gradient_update == 0:  # If it is the first iteration, we don't have hidden states
-                        (
-                            inner_total_loss,
-                            rnn_hidden_states,
-                            inner_dist_entropy,
-                            inner_action_loss
-                        ) = self.agent.calculate_loss(task, learner, hidden_states=None)
-
-                    elif num_gradient_update > 0:
-                        (
-                            inner_total_loss,
-                            rnn_hidden_states,
-                            inner_dist_entropy,
-                            inner_action_loss
-                        ) = self.agent.calculate_loss(task, learner, hidden_states=rnn_hidden_states)
-
-                    learner.adapt(inner_total_loss)
-
-            with torch.no_grad():
-                (
-                    actions,
-                    test_recurrent_hidden_states,
-                ) = self.actor_critic.act(
-                    batch,
-                    test_recurrent_hidden_states,
-                    prev_actions,
-                    not_done_masks,
-                    deterministic=True,
-                )
-
-                prev_actions.copy_(actions)  # type: ignore
-            # NB: Move actions to CPU.  If CUDA tensors are
-            # sent in to env.step(), that will create CUDA contexts
-            # in the subprocesses.
-            # For backwards compatibility, we also call .item() to convert to
-            # an int
-            if actions[0].shape[0] > 1:
-                step_data = [
-                    action_array_to_dict(self.policy_action_space, a)
-                    for a in actions.to(device="cpu")
-                ]
-            else:
-                step_data = [a.item() for a in actions.to(device="cpu")]
-
-            outputs = self.envs.step(step_data)
-
-            observations, rewards_l, dones, infos = [
-                list(x) for x in zip(*outputs)
-            ]
-            batch = batch_obs(  # type: ignore
-                observations,
-                device=self.device,
-                cache=self._obs_batching_cache,
+            # Get init observations
+            observations = self.envs.reset()
+            batch = batch_obs(
+                observations, device=self.device, cache=self._obs_batching_cache
             )
             batch = apply_obs_transforms_batch(batch, self.obs_transforms)  # type: ignore
 
-            not_done_masks = torch.tensor(
-                [[not done] for done in dones],
+            current_episode_reward = torch.zeros(
+                self.envs.num_envs, 1, device="cpu"
+            )
+
+            test_recurrent_hidden_states = torch.zeros(
+                self.envs.num_envs,
+                self.actor_critic.net.num_recurrent_layers,
+                policy_cfg.STATE_ENCODER.hidden_size,
+                device=self.device,
+            )
+            prev_actions = torch.zeros(
+                num_steps+1,
+                self.envs.num_envs,
+                *action_shape,
+                device=self.device,
+                dtype=torch.long if discrete_actions else torch.float,
+            )
+            actions = torch.zeros(
+                num_steps+1,
+                self.envs.num_envs,
+                *action_shape,
+                device=self.device,
+                dtype=torch.long if discrete_actions else torch.float,
+            )
+            not_done_masks = torch.zeros(
+                num_steps+1,
+                self.envs.num_envs,
+                1,
+                device=self.device,
                 dtype=torch.bool,
-                device="cpu",
             )
-
-            rewards = torch.tensor(
-                rewards_l, dtype=torch.float, device="cpu"
-            ).unsqueeze(1)
-            current_episode_reward += rewards
-            next_episodes = self.envs.current_episodes()
-            envs_to_pause = []
-            n_envs = self.envs.num_envs
-            for i in range(n_envs):
-                if (
-                        next_episodes[i].scene_id,
-                        next_episodes[i].episode_id,
-                ) in stats_episodes:
-                    envs_to_pause.append(i)
-
-                # episode ended
-                if not not_done_masks[i].item():
-                    pbar.update()
-                    episode_stats = {
-                        "reward": current_episode_reward[i].item()
-                    }
-                    episode_stats.update(
-                        self._extract_scalars_from_info(infos[i])
-                    )
-                    current_episode_reward[i] = 0
-                    # use scene_id + episode_id as unique id for storing stats
-                    stats_episodes[
+            batch_observations = TensorDict()
+            for sensor in obs_space.spaces:
+                batch_observations[sensor] = torch.from_numpy(
+                    np.zeros(
                         (
-                            current_episodes[i].scene_id,
-                            current_episodes[i].episode_id,
+                            num_steps + 1,
+                            self.envs.num_envs,
+                            *obs_space.spaces[sensor].shape,
+                        ),
+                        dtype=obs_space.spaces[sensor].dtype,
+                    ),
+
+                ).to(self.device)
+
+            stats_episodes: Dict[
+                Any, Any
+            ] = {}  # dict of dicts that stores stats per episode
+
+            evaluating = False  # Trigger when the agent is adapted to the task
+
+            while len(stats_episodes) < number_of_task_episodes:
+
+                if not evaluating:
+
+                    for gradient_step in range(num_gradient_updates):
+
+                        for step in range(num_steps):
+
+                            # Set actions
+                            action = batch['next_actions']
+                            actions[step] = action
+                            prev_actions[step+1] = action
+
+                            # Get env data
+                            step_data = [a.item() for a in action.to(device="cpu")]
+                            outputs = self.envs.step(step_data)
+                            observations, rewards_l, dones, infos = [
+                                list(x) for x in zip(*outputs)
+                            ]
+                            batch = batch_obs(  # type: ignore
+                                observations,
+                                device=self.device,
+                                cache=self._obs_batching_cache,
+                            )
+                            batch = apply_obs_transforms_batch(batch, self.obs_transforms)  # type: ignore
+                            batch['rgb']= batch['rgb'].squeeze()
+                            # Update obs
+                            batch_observations.set(
+                                step + 1,
+                                batch,
+                                strict=False
+                            )
+
+                            # Update masks
+                            not_done_mask = torch.tensor(
+                                [[not done] for done in dones],
+                                dtype=torch.bool,
+                                device="cpu",
+                            )
+                            not_done_masks[step+1] = not_done_mask
+
+                            reward = torch.tensor(
+                                rewards_l, dtype=torch.float, device="cpu"
+                            ).unsqueeze(1)
+                            current_episode_reward += reward
+
+                        task = {
+                            'observations': batch_observations,
+                            'actions': actions,
+                            'prev_actions': prev_actions,
+                            'masks': not_done_masks,
+                            'recurrent_hidden_states': test_recurrent_hidden_states
+                        }
+
+                        learner = self.actor_critic.clone()
+
+                        if gradient_step == 0:  # If it is the first iteration, we don't have hidden states
+                            (
+                                inner_total_loss,
+                                rnn_hidden_states,
+                                inner_dist_entropy,
+                                inner_action_loss
+                            ) = self.agent.calculate_loss(task, learner, hidden_states=None)
+
+                        elif gradient_step > 0:
+                            (
+                                inner_total_loss,
+                                rnn_hidden_states,
+                                inner_dist_entropy,
+                                inner_action_loss
+                            ) = self.agent.calculate_loss(task, learner, hidden_states=rnn_hidden_states)
+
+                        learner.adapt(inner_total_loss)
+
+                    evaluating = True
+
+                else:
+                    # learner.eval()
+                    with torch.no_grad():
+                        (
+                            action,
+                            test_recurrent_hidden_states,
+                        ) = self.actor_critic.act(
+                            batch,
+                            test_recurrent_hidden_states,
+                            prev_actions,
+                            not_done_masks,
+                            deterministic=True,
                         )
-                    ] = episode_stats
 
-                    if len(self.config.VIDEO_OPTION) > 0:
-                        generate_video(
-                            video_option=self.config.VIDEO_OPTION,
-                            video_dir=self.config.VIDEO_DIR,
-                            images=rgb_frames[i],
-                            episode_id=current_episodes[i].episode_id,
-                            checkpoint_idx=checkpoint_index,
-                            metrics=self._extract_scalars_from_info(infos[i]),
-                            fps=self.config.VIDEO_FPS,
-                            tb_writer=writer,
-                            keys_to_include_in_name=self.config.EVAL_KEYS_TO_INCLUDE_IN_NAME,
+                next_episodes = self.envs.current_episodes()
+                envs_to_pause = []
+                n_envs = self.envs.num_envs
+                for i in range(n_envs):
+                    if (
+                            next_episodes[i].scene_id,
+                            next_episodes[i].episode_id,
+                    ) in stats_episodes:
+                        envs_to_pause.append(i)
+
+                    # episode ended
+                    if not not_done_masks[i].item():
+                        episodebar.update()
+                        episode_stats = {
+                            "reward": current_episode_reward[i].item()
+                        }
+                        episode_stats.update(
+                            self._extract_scalars_from_info(infos[i])
                         )
+                        current_episode_reward[i] = 0
+                        # use scene_id + episode_id as unique id for storing stats
+                        stats_episodes[
+                            (
+                                current_episodes[i].scene_id,
+                                current_episodes[i].episode_id,
+                            )
+                        ] = episode_stats
 
-                        rgb_frames[i] = []
+                        if len(self.config.VIDEO_OPTION) > 0:
+                            generate_video(
+                                video_option=self.config.VIDEO_OPTION,
+                                video_dir=self.config.VIDEO_DIR,
+                                images=rgb_frames[i],
+                                episode_id=current_episodes[i].episode_id,
+                                checkpoint_idx=checkpoint_index,
+                                metrics=self._extract_scalars_from_info(infos[i]),
+                                fps=self.config.VIDEO_FPS,
+                                tb_writer=writer,
+                                keys_to_include_in_name=self.config.EVAL_KEYS_TO_INCLUDE_IN_NAME,
+                            )
 
-                # episode continues
-                elif len(self.config.VIDEO_OPTION) > 0:
-                    # TODO move normalization / channel changing out of the policy and undo it here
-                    frame = observations_to_image(
-                        {k: v[i] for k, v in batch.items()}, infos[i]
-                    )
-                    if self.config.VIDEO_RENDER_ALL_INFO:
-                        frame = overlay_frame(frame, infos[i])
+                            rgb_frames[i] = []
 
-                    rgb_frames[i].append(frame)
+                    # episode continues
+                    elif len(self.config.VIDEO_OPTION) > 0:
+                        # TODO move normalization / channel changing out of the policy and undo it here
+                        frame = observations_to_image(
+                            {k: v[i] for k, v in batch.items()}, infos[i]
+                        )
+                        if self.config.VIDEO_RENDER_ALL_INFO:
+                            frame = overlay_frame(frame, infos[i])
 
-            not_done_masks = not_done_masks.to(device=self.device)
-            (
-                self.envs,
-                test_recurrent_hidden_states,
-                not_done_masks,
-                current_episode_reward,
-                prev_actions,
-                batch,
-                rgb_frames,
-            ) = self._pause_envs(
-                envs_to_pause,
-                self.envs,
-                test_recurrent_hidden_states,
-                not_done_masks,
-                current_episode_reward,
-                prev_actions,
-                batch,
-                rgb_frames,
+                        rgb_frames[i].append(frame)
+
+                not_done_masks = not_done_masks.to(device=self.device)
+                (
+                    self.envs,
+                    test_recurrent_hidden_states,
+                    not_done_masks,
+                    current_episode_reward,
+                    prev_actions,
+                    batch,
+                    rgb_frames,
+                ) = self._pause_envs(
+                    envs_to_pause,
+                    self.envs,
+                    test_recurrent_hidden_states,
+                    not_done_masks,
+                    current_episode_reward,
+                    prev_actions,
+                    batch,
+                    rgb_frames,
+                )
+
+            taskbar.update()
+
+            num_episodes = len(stats_episodes)
+            aggregated_stats = {}
+            for stat_key in next(iter(stats_episodes.values())).keys():
+                aggregated_stats[stat_key] = (
+                        sum(v[stat_key] for v in stats_episodes.values())
+                        / num_episodes
+                )
+
+            for k, v in aggregated_stats.items():
+                logger.info(f"Average episode {k}: {v:.4f}")
+
+            step_id = checkpoint_index
+            if "extra_state" in ckpt_dict and "step" in ckpt_dict["extra_state"]:
+                step_id = ckpt_dict["extra_state"]["step"]
+
+            writer.add_scalar(
+                "eval_reward/average_reward", aggregated_stats["reward"], step_id
             )
 
-        num_episodes = len(stats_episodes)
-        aggregated_stats = {}
-        for stat_key in next(iter(stats_episodes.values())).keys():
-            aggregated_stats[stat_key] = (
-                    sum(v[stat_key] for v in stats_episodes.values())
-                    / num_episodes
-            )
-
-        for k, v in aggregated_stats.items():
-            logger.info(f"Average episode {k}: {v:.4f}")
-
-        step_id = checkpoint_index
-        if "extra_state" in ckpt_dict and "step" in ckpt_dict["extra_state"]:
-            step_id = ckpt_dict["extra_state"]["step"]
-
-        writer.add_scalar(
-            "eval_reward/average_reward", aggregated_stats["reward"], step_id
-        )
-
-        metrics = {k: v for k, v in aggregated_stats.items() if k != "reward"}
-        for k, v in metrics.items():
-            writer.add_scalar(f"eval_metrics/{k}", v, step_id)
+            metrics = {k: v for k, v in aggregated_stats.items() if k != "reward"}
+            for k, v in metrics.items():
+                writer.add_scalar(f"eval_metrics/{k}", v, step_id)
 
         self.envs.close()

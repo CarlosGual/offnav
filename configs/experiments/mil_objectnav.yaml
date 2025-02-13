@@ -4,13 +4,14 @@ ENV_NAME: "SimpleMetaRLEnv"
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
 VIDEO_OPTION: []
-TENSORBOARD_DIR: "data/checkpoints/pruebas_first_order_setup2"
+TENSORBOARD_DIR: "data/checkpoints/penelope_lr_0.00001"
+CHECKPOINT_FOLDER: "data/checkpoints/penelope_lr_0.00001"
 VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
-EVAL_CKPT_PATH_DIR: "data/checkpoints/pruebas_first_order_setup2"
+EVAL_CKPT_PATH_DIR: "data/checkpoints/pruebas_iguales_penelope_setup3"
 TRAINER_NAME: "pirlnav-mil"
 SENSORS: ["RGB_SENSOR"]
-NUM_UPDATES: 10000 # num outer updates
+NUM_UPDATES: 100000 # num outer updates
 LOG_INTERVAL: 10
 WANDB_ENABLED: False
 NUM_CHECKPOINTS: 20
@@ -26,19 +27,19 @@ IL:
   POLICY:
     name: "ObjectNavILMAEPolicy"
   BehaviorCloning:
-    encoder_lr: 0.0001
-    lr: 0.0001
+    encoder_lr: 0.00001
+    lr: 0.00001
     num_mini_batch: 2 # With this we control how many tasks we have per outer update
   STATE_ENCODER:
     rnn_type: "GRU"
 
 META:
   MIL:
-    num_gradient_updates: 3
+    num_gradient_updates: 2
     num_tasks: 2
-    num_updates_per_sampled_tasks: 3
+    num_updates_per_sampled_tasks: 5
 
-NUM_ENVIRONMENTS: 4 # Equivalent to num_tasks
+NUM_ENVIRONMENTS: 8
 
 RL:
   SUCCESS_REWARD: 2.5

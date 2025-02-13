@@ -516,6 +516,9 @@ class SimpleMetaRLEnv(MetaRLEnv):
     def get_info(self, observations):
         return self._env.get_metrics()
 
+    def get_available_tasks(self):
+        return self._available_tasks
+
 
 @habitat.registry.register_env(name="SimpleRLEnv")
 class SimpleRLEnv(RLEnv):

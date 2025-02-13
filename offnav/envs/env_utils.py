@@ -43,6 +43,7 @@ def construct_meta_envs(
     config: Config,
     env_class: Union[Type[Env], Type[RLEnv]],
     workers_ignore_signals: bool = False,
+    eval: bool = False,
 ) -> MetaVectorEnv:
     r"""Create VectorEnv object with specified config and env class type.
     To allow better performance, dataset are split into small ones for
@@ -56,10 +57,11 @@ def construct_meta_envs(
     :return: MetaVectorEnv object created according to specification.
     """
 
-    num_environments = config.NUM_ENVIRONMENTS
-    num_mini_batch = config.IL.BehaviorCloning.num_mini_batch
-    num_tasks = config.META.MIL.num_tasks
-    assert num_mini_batch == num_tasks, "num_tasks must be equal to num_environments / num_mini_batch"
+    num_environments = config.NUM_ENVIRONMENTS if not eval else 1
+    num_mini_batch = config.IL.BehaviorCloning.num_mini_batch if not eval else 1
+    num_tasks = config.META.MIL.num_tasks if not eval else 1
+
+    assert num_mini_batch == num_tasks, "num_tasks must be equal to num_mini_batch"
     # Num tasks will determine how to distribute the scenes along the environments
     configs = []
     env_classes = [env_class for _ in range(num_environments)]
@@ -94,7 +96,7 @@ def construct_meta_envs(
             task_idx = idx % num_tasks
             for split_idx in inds[task_idx]:
                 scene_splits[split_idx].append(scene)
-        assert sum(map(len, scene_splits)) == len(scenes)*num_tasks
+        assert sum(map(len, scene_splits)) == len(scenes)*len(inds[0])
 
     for i in range(num_environments):
         proc_config = config.clone()

@@ -63,6 +63,8 @@ CURRENT_EPISODE_NAME = "current_episode"
 NUMBER_OF_EPISODE_NAME = "number_of_episodes"
 ACTION_SPACE_NAME = "action_space"
 OBSERVATION_SPACE_NAME = "observation_space"
+GET_TASKS_NAME = "get_available_tasks"
+
 
 
 def _make_env_fn(
@@ -383,6 +385,16 @@ class MetaVectorEnv:
         for read_fn in self._connection_read_fns:
             results.append(read_fn())
         return results
+
+    def get_available_tasks(self):
+        for write_fn in self._connection_write_fns:
+            write_fn((CALL_COMMAND, (GET_TASKS_NAME, None)))
+        results = []
+        for read_fn in self._connection_read_fns:
+            results.append(read_fn())
+        ## Concatenate the tasks from all the envs
+        tasks = [task for task_list in results for task in task_list]
+        return list(set(tasks))
 
     def sample_tasks(self, num_tasks: int):
         inds = torch.arange(self._num_envs).chunk(num_tasks)

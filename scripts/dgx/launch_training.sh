@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # ******************* Setup dirs *************************************************
-setup="setup3"
-exp_name="pruebas_3_gradient_updates_tasks_per_batch"
+setup="full"
+exp_name="dgx_cuatro_nodos_lr_0.0001_resnet50conDINO"
 
 CONFIG="configs/experiments/mil_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_${setup}"
 TENSORBOARD_DIR="tb/${exp_name}_${setup}"
-CHECKPOINT_DIR="data/checkpoints/offnav/${exp_name}_${setup}"
+CHECKPOINT_DIR="data/checkpoints/metanav/${exp_name}_${setup}"
 
 # ******************* Set nvidia-smi to log GPU usage ******************************
 mkdir -p "$TENSORBOARD_DIR"
@@ -35,8 +35,8 @@ export NGPU_PER_NODE
 export OMP_NUM_THREADS=$((NUM_CPUS/NGPU_PER_NODE))
 
 # ******************* Run the training script *******************************
-echo "Getting number of cpus and gpus per node..."
-echo "$NUM_CPUS", "$NGPU_PER_NODE", $OMP_NUM_THREADS
+echo "Getting number of cpus and cpus per node..."
+echo "NUM_CPUS: $NUM_CPUS", "NGPU_PER_NODE: $NGPU_PER_NODE", "CPUS PER GPU: $OMP_NUM_THREADS"
 echo "Running meta imitation learning..."
 
 torchrun --nnodes="${NHOSTS}" \
@@ -47,12 +47,14 @@ torchrun --nnodes="${NHOSTS}" \
     --run-type train \
     TENSORBOARD_DIR "$TENSORBOARD_DIR" \
     CHECKPOINT_FOLDER "$CHECKPOINT_DIR" \
-    NUM_UPDATES 50000 \
+    NUM_UPDATES 100000 \
     WANDB_ENABLED True \
-    NUM_ENVIRONMENTS 48 \
-    IL.BehaviorCloning.num_mini_batch 8 \
-    META.MIL.num_tasks 8 \
-    META.MIL.num_gradient_updates 3 \
+    NUM_ENVIRONMENTS 16 \
+    IL.BehaviorCloning.num_mini_batch 2 \
+    IL.BehaviorCloning.lr 0.0001 \
+    META.MIL.num_tasks 2 \
+    META.MIL.num_gradient_updates 2 \
+    META.MIL.num_updates_per_sampled_tasks 5 \
     RL.DDPPO.force_distributed True \
     RL.DDPPO.distrib_backend 'NCCL' \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz"

@@ -25,7 +25,7 @@ python setup.py develop --all
 cd ..
 
 # Install wandb
-pip install wandb learn2learn torchrl
+pip install wandb learn2learn
 conda install protobuf -y
 
 
