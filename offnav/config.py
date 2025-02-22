@@ -192,6 +192,7 @@ _CONFIG.META.MIL.num_tasks = 1
 _CONFIG.META.MIL.num_gradient_updates = 4
 _CONFIG.META.MIL.num_updates_per_sampled_tasks = 3
 _CONFIG.META.METAITERATOR = CN()
+_CONFIG.META.METAITERATOR.shuffle = True
 
 
 ##############################################

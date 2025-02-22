@@ -4,8 +4,8 @@ ENV_NAME: "SimpleMetaRLEnv"
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
 VIDEO_OPTION: []
-TENSORBOARD_DIR: "data/checkpoints/penelope_lr_0.00001"
-CHECKPOINT_FOLDER: "data/checkpoints/penelope_lr_0.00001"
+TENSORBOARD_DIR: "data/checkpoints/pruebas"
+CHECKPOINT_FOLDER: "data/checkpoints/pruebas"
 VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
 EVAL_CKPT_PATH_DIR: "data/checkpoints/pruebas_iguales_penelope_setup3"
@@ -39,7 +39,7 @@ META:
     num_tasks: 2
     num_updates_per_sampled_tasks: 5
 
-NUM_ENVIRONMENTS: 8
+NUM_ENVIRONMENTS: 2
 
 RL:
   SUCCESS_REWARD: 2.5
@@ -54,5 +54,5 @@ POLICY:
   STATE_ENCODER:
     rnn_type: "GRU"
   RGB_ENCODER:
-    backbone: resnet18
+    backbone: resnet50
 #    pretrained_encoder: "data/visual_encoders/omnidata_DINO_02.pth"

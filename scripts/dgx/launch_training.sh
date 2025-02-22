@@ -2,7 +2,7 @@
 
 # ******************* Setup dirs *************************************************
 setup="full"
-exp_name="dgx_cuatro_nodos_lr_0.0001_resnet50conDINO"
+exp_name="dgx_multinodo_cyclyclr_resnet50DINO"
 
 CONFIG="configs/experiments/mil_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_${setup}"
@@ -49,12 +49,14 @@ torchrun --nnodes="${NHOSTS}" \
     CHECKPOINT_FOLDER "$CHECKPOINT_DIR" \
     NUM_UPDATES 100000 \
     WANDB_ENABLED True \
-    NUM_ENVIRONMENTS 16 \
+    NUM_ENVIRONMENTS 18 \
     IL.BehaviorCloning.num_mini_batch 2 \
     IL.BehaviorCloning.lr 0.0001 \
     META.MIL.num_tasks 2 \
     META.MIL.num_gradient_updates 2 \
     META.MIL.num_updates_per_sampled_tasks 5 \
+    POLICY.RGB_ENCODER.backbone 'resnet50' \
+    POLICY.RGB_ENCODER.pretrained_encoder 'data/visual_encoders/omnidata_DINO_02.pth' \
     RL.DDPPO.force_distributed True \
     RL.DDPPO.distrib_backend 'NCCL' \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz"

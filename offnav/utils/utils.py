@@ -59,17 +59,10 @@ def load_encoder(encoder, path):
         raise ValueError("unknown encoder backbone")
 
 
-def adapt_state_dict(saved_state_dict, module_names):
+def adapt_state_dict(saved_state_dict):
     new_state_dict = {}
-
-    for name in module_names:
-        for k, v in saved_state_dict.items():
-            if k.startswith("model.net"):
-                new_state_dict[k.replace("model.net", f"actor_critic.{name}")] = v
-            elif k.startswith("model.action_distribution") and name == "net":
-                new_state_dict[k.replace("model", "actor_critic")] = v
-            else:
-                continue
+    for k, v in saved_state_dict.items():
+        new_state_dict[k.replace("model", f"actor_critic.module")] = v
     return new_state_dict
 
 

@@ -17,7 +17,6 @@ import torch
 import tqdm
 import wandb
 from gym import spaces
-from torch.xpu import device
 
 from habitat import Config, logger
 from habitat.utils import profiling_wrapper
@@ -53,7 +52,7 @@ from habitat_baselines.utils.common import (
     linear_decay,
 )
 from torch import nn as nn
-from torch.optim.lr_scheduler import LambdaLR
+from torch.optim.lr_scheduler import LambdaLR, CyclicLR
 
 from offnav.algos.agent import DDPILAgent
 from offnav.algos.meta_agent import DDPMILAgent
@@ -61,7 +60,11 @@ from offnav.common.rollout_storage import ILRolloutStorage, MILRolloutStorage
 from offnav.envs.env_utils import construct_meta_envs
 from habitat.core.environments import get_env_class
 from offnav.envs.meta_vector_env import MetaVectorEnv
+from offnav.utils.utils import load_pretrained_checkpoint, adapt_state_dict
 
+# torch.backends.cuda.enable_mem_efficient_sdp(False)
+# torch.backends.cuda.enable_flash_sdp(False)
+# torch.backends.cuda.enable_math_sdp(True)
 
 @baseline_registry.register_trainer(name="pirlnav-mil")
 class MILEnvDDPTrainer(PPOTrainer):
@@ -384,6 +387,8 @@ class MILEnvDDPTrainer(PPOTrainer):
 
         count_checkpoints = 0
         prev_time = 0
+        il_cfg = self.config.IL.BehaviorCloning
+        meta_cfg = self.config.META.MIL
 
         lr_scheduler = LambdaLR(
             optimizer=self.agent.outer_optimizer,
@@ -412,8 +417,15 @@ class MILEnvDDPTrainer(PPOTrainer):
                 requeue_stats["window_episode_stats"]
             )
 
-        il_cfg = self.config.IL.BehaviorCloning
-        meta_cfg = self.config.META.MIL
+        else:
+            logger.info('Loading pretrained checkpoint')
+            prev_checkpoint = load_pretrained_checkpoint('data/objectnav_il_hd.ckpt')
+            prev_checkpoint = prev_checkpoint['state_dict']
+            logger.info(f'Adapting state dict')
+            new_state_dict = adapt_state_dict(prev_checkpoint)
+            logger.info(f'Loading adapted state dict into actor critic')
+            self.agent.load_state_dict(new_state_dict, strict=True)
+
         iter_sampled_tasks = 0
 
         with (
@@ -541,19 +553,20 @@ class MILEnvDDPTrainer(PPOTrainer):
                 if self._is_distributed:
                     self.num_rollouts_done_store.add("num_done", self.config.META.MIL.num_gradient_updates + 1)
 
-                logger.info('----------------- New batch ----------------------')
-                for i, episode in enumerate(self.envs.current_episodes()):
-                    logger.info(
-                        "Environment: {}, Current scene: {}, Current goal {}, Current task_id {}, episode: {}, "
-                        "length: {}".format(
-                            i,
-                            episode.scene_id.split(".")[-3].split("/")[-1],
-                            episode.object_category,
-                            episode.goals_key,
-                            episode.episode_id,
-                            len(episode.reference_replay)
-                        )
-                    )
+                # if False:
+                #     logger.info('----------------- New batch ----------------------')
+                #     for i, episode in enumerate(self.envs.current_episodes()):
+                #         logger.info(
+                #             "Environment: {}, Current scene: {}, Current goal {}, Current task_id {}, episode: {}, "
+                #             "length: {}".format(
+                #                 i,
+                #                 episode.scene_id.split(".")[-3].split("/")[-1],
+                #                 episode.object_category,
+                #                 episode.goals_key,
+                #                 episode.episode_id,
+                #                 len(episode.reference_replay)
+                #             )
+                #         )
 
                 if il_cfg.use_linear_lr_decay:
                     lr_scheduler.step()  # type: ignore
@@ -709,6 +722,8 @@ class MILEnvDDPTrainer(PPOTrainer):
         config.TASK_CONFIG.TASK.SENSORS.extend(
             ["DEMONSTRATION_SENSOR", "INFLECTION_WEIGHT_SENSOR"]
         )
+        # Add no shuffle for meta iterator
+        # config.META.METAITERATOR.shuffle = False
         config.freeze()
 
         self._init_envs(config, eval=True)
@@ -803,6 +818,12 @@ class MILEnvDDPTrainer(PPOTrainer):
                 device=self.device,
                 dtype=torch.long if discrete_actions else torch.float,
             )
+            prev_action = torch.zeros(
+                self.envs.num_envs,
+                *action_shape,
+                device=self.device,
+                dtype=torch.long if discrete_actions else torch.float,
+            )
             actions = torch.zeros(
                 num_steps+1,
                 self.envs.num_envs,
@@ -831,13 +852,13 @@ class MILEnvDDPTrainer(PPOTrainer):
 
                 ).to(self.device)
 
-            stats_episodes: Dict[
+            task_stats_episodes: Dict[
                 Any, Any
             ] = {}  # dict of dicts that stores stats per episode
 
             evaluating = False  # Trigger when the agent is adapted to the task
 
-            while len(stats_episodes) < number_of_task_episodes:
+            while len(task_stats_episodes) < number_of_task_episodes:
 
                 if not evaluating:
 
@@ -913,7 +934,14 @@ class MILEnvDDPTrainer(PPOTrainer):
 
                     evaluating = True
 
+                    batch['rgb'] = batch['rgb'].unsqueeze(0)
+                    prev_action.copy_(action)
+
                 else:
+
+                    not_done_mask = not_done_mask.to(device=self.device)
+                    # print(batch)
+
                     # learner.eval()
                     with torch.no_grad():
                         (
@@ -922,108 +950,139 @@ class MILEnvDDPTrainer(PPOTrainer):
                         ) = self.actor_critic.act(
                             batch,
                             test_recurrent_hidden_states,
-                            prev_actions,
-                            not_done_masks,
+                            prev_action,
+                            not_done_mask,
                             deterministic=True,
                         )
+                        prev_action.copy_(action)
 
-                next_episodes = self.envs.current_episodes()
-                envs_to_pause = []
-                n_envs = self.envs.num_envs
-                for i in range(n_envs):
-                    if (
-                            next_episodes[i].scene_id,
-                            next_episodes[i].episode_id,
-                    ) in stats_episodes:
-                        envs_to_pause.append(i)
+                    step_data = [a.item() for a in action.to(device="cpu")]
 
-                    # episode ended
-                    if not not_done_masks[i].item():
-                        episodebar.update()
-                        episode_stats = {
-                            "reward": current_episode_reward[i].item()
-                        }
-                        episode_stats.update(
-                            self._extract_scalars_from_info(infos[i])
-                        )
-                        current_episode_reward[i] = 0
-                        # use scene_id + episode_id as unique id for storing stats
-                        stats_episodes[
-                            (
-                                current_episodes[i].scene_id,
-                                current_episodes[i].episode_id,
+                    outputs = self.envs.step(step_data)
+
+                    if np.abs(outputs[0][0]['compass']) == 0.0:
+                        print('aquí tamoh family')
+
+                    observations, rewards_l, dones, infos = [
+                        list(x) for x in zip(*outputs)
+                    ]
+                    batch = batch_obs(  # type: ignore
+                        observations,
+                        device=self.device,
+                        cache=self._obs_batching_cache,
+                    )
+                    batch = apply_obs_transforms_batch(batch, self.obs_transforms)  # type: ignore
+
+                    not_done_mask = torch.tensor(
+                        [[not done] for done in dones],
+                        dtype=torch.bool,
+                        device="cpu",
+                    )
+
+                    rewards = torch.tensor(
+                        rewards_l, dtype=torch.float, device="cpu"
+                    ).unsqueeze(1)
+                    current_episode_reward += rewards
+
+                    next_episodes = self.envs.current_episodes()
+                    envs_to_pause = []
+                    n_envs = self.envs.num_envs
+                    for i in range(n_envs):
+                        if (
+                                next_episodes[i].scene_id,
+                                next_episodes[i].episode_id,
+                        ) in task_stats_episodes:
+                            envs_to_pause.append(i)
+
+                        # episode ended
+                        if not not_done_mask[i].item():
+                            episodebar.update()
+                            if episodebar.n == 184:
+                                print('aquí tamoh family')
+                            episode_stats = {
+                                "reward": current_episode_reward[i].item()
+                            }
+                            episode_stats.update(
+                                self._extract_scalars_from_info(infos[i])
                             )
-                        ] = episode_stats
+                            current_episode_reward[i] = 0
+                            # use scene_id + episode_id as unique id for storing stats
+                            task_stats_episodes[
+                                (
+                                    current_episodes[i].scene_id,
+                                    current_episodes[i].episode_id,
+                                )
+                            ] = episode_stats
 
-                        if len(self.config.VIDEO_OPTION) > 0:
-                            generate_video(
-                                video_option=self.config.VIDEO_OPTION,
-                                video_dir=self.config.VIDEO_DIR,
-                                images=rgb_frames[i],
-                                episode_id=current_episodes[i].episode_id,
-                                checkpoint_idx=checkpoint_index,
-                                metrics=self._extract_scalars_from_info(infos[i]),
-                                fps=self.config.VIDEO_FPS,
-                                tb_writer=writer,
-                                keys_to_include_in_name=self.config.EVAL_KEYS_TO_INCLUDE_IN_NAME,
+                            if len(self.config.VIDEO_OPTION) > 0:
+                                generate_video(
+                                    video_option=self.config.VIDEO_OPTION,
+                                    video_dir=self.config.VIDEO_DIR,
+                                    images=rgb_frames[i],
+                                    episode_id=current_episodes[i].episode_id,
+                                    checkpoint_idx=checkpoint_index,
+                                    metrics=self._extract_scalars_from_info(infos[i]),
+                                    fps=self.config.VIDEO_FPS,
+                                    tb_writer=writer,
+                                    keys_to_include_in_name=self.config.EVAL_KEYS_TO_INCLUDE_IN_NAME,
+                                )
+
+                                rgb_frames[i] = []
+
+                        # episode continues
+                        elif len(self.config.VIDEO_OPTION) > 0:
+                            # TODO move normalization / channel changing out of the policy and undo it here
+                            frame = observations_to_image(
+                                {k: v[i] for k, v in batch.items()}, infos[i]
                             )
+                            if self.config.VIDEO_RENDER_ALL_INFO:
+                                frame = overlay_frame(frame, infos[i])
 
-                            rgb_frames[i] = []
+                            rgb_frames[i].append(frame)
 
-                    # episode continues
-                    elif len(self.config.VIDEO_OPTION) > 0:
-                        # TODO move normalization / channel changing out of the policy and undo it here
-                        frame = observations_to_image(
-                            {k: v[i] for k, v in batch.items()}, infos[i]
-                        )
-                        if self.config.VIDEO_RENDER_ALL_INFO:
-                            frame = overlay_frame(frame, infos[i])
-
-                        rgb_frames[i].append(frame)
-
-                not_done_masks = not_done_masks.to(device=self.device)
-                (
-                    self.envs,
-                    test_recurrent_hidden_states,
-                    not_done_masks,
-                    current_episode_reward,
-                    prev_actions,
-                    batch,
-                    rgb_frames,
-                ) = self._pause_envs(
-                    envs_to_pause,
-                    self.envs,
-                    test_recurrent_hidden_states,
-                    not_done_masks,
-                    current_episode_reward,
-                    prev_actions,
-                    batch,
-                    rgb_frames,
-                )
+                    (
+                        self.envs,
+                        test_recurrent_hidden_states,
+                        not_done_mask,
+                        current_episode_reward,
+                        prev_actions,
+                        batch,
+                        rgb_frames,
+                    ) = self._pause_envs(
+                        envs_to_pause,
+                        self.envs,
+                        test_recurrent_hidden_states,
+                        not_done_mask,
+                        current_episode_reward,
+                        prev_action,
+                        batch,
+                        rgb_frames,
+                    )
 
             taskbar.update()
+            stats_episodes.update(task_stats_episodes)
 
-            num_episodes = len(stats_episodes)
-            aggregated_stats = {}
-            for stat_key in next(iter(stats_episodes.values())).keys():
-                aggregated_stats[stat_key] = (
-                        sum(v[stat_key] for v in stats_episodes.values())
-                        / num_episodes
-                )
-
-            for k, v in aggregated_stats.items():
-                logger.info(f"Average episode {k}: {v:.4f}")
-
-            step_id = checkpoint_index
-            if "extra_state" in ckpt_dict and "step" in ckpt_dict["extra_state"]:
-                step_id = ckpt_dict["extra_state"]["step"]
-
-            writer.add_scalar(
-                "eval_reward/average_reward", aggregated_stats["reward"], step_id
+        num_episodes = len(stats_episodes)
+        aggregated_stats = {}
+        for stat_key in next(iter(stats_episodes.values())).keys():
+            aggregated_stats[stat_key] = (
+                    sum(v[stat_key] for v in stats_episodes.values())
+                    / num_episodes
             )
 
-            metrics = {k: v for k, v in aggregated_stats.items() if k != "reward"}
-            for k, v in metrics.items():
-                writer.add_scalar(f"eval_metrics/{k}", v, step_id)
+        for k, v in aggregated_stats.items():
+            logger.info(f"Average episode {k}: {v:.4f}")
+
+        step_id = checkpoint_index
+        if "extra_state" in ckpt_dict and "step" in ckpt_dict["extra_state"]:
+            step_id = ckpt_dict["extra_state"]["step"]
+
+        writer.add_scalar(
+            "eval_reward/average_reward", aggregated_stats["reward"], step_id
+        )
+
+        metrics = {k: v for k, v in aggregated_stats.items() if k != "reward"}
+        for k, v in metrics.items():
+            writer.add_scalar(f"eval_metrics/{k}", v, step_id)
 
         self.envs.close()
