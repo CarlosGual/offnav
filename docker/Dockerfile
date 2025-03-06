@@ -39,7 +39,7 @@ RUN ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake
 RUN cmake --version
 
 # Add user
-RUN useradd -u 1004 --create-home carlos # 1001 for penelope, 1001 for zeus and 1004 for DGX
+RUN useradd -u 1001 --create-home carlos # 1001 for penelope, zeus and poseidon and 1004 for DGX
 WORKDIR /home/carlos
 RUN mkdir code/
 
@@ -47,7 +47,7 @@ RUN mkdir code/
 USER carlos
 
 # Conda environment
-RUN conda create -n habitat python=3.8 cmake=3.14.0
+RUN conda create -n habitat python=3.9 cmake=3.14.0
 
 # Setup habitat-sim
 RUN git clone --depth 1 --branch v0.2.2 https://github.com/facebookresearch/habitat-sim.git
@@ -57,7 +57,7 @@ RUN /bin/bash -c ". activate habitat; cd habitat-sim; pip install -r requirement
 RUN /bin/bash -c ". activate habitat; pip3 install torch torchvision torchaudio"
 
 # This is to avoid breaking the offnav instalation
-RUN /bin/bash -c ". activate habitat; pip install gym==0.22.0 urllib3==1.25.11"
+RUN /bin/bash -c ". activate habitat; pip install gym==0.22.0 urllib3==1.25.11 numpy==1.25.0 pillow==9.2.0"
 
 # Install specific habitat-lab
 RUN git clone https://github.com/carlosgual/habitat-lab.git

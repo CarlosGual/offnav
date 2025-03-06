@@ -396,35 +396,38 @@ class MILEnvDDPTrainer(PPOTrainer):
         )
 
         # resume_state = load_resume_state(self.config)
-        if resume_state is not None:
-            self.agent.load_state_dict(resume_state["state_dict"])
-            self.agent.outer_optimizer.load_state_dict(resume_state["optim_state"])
-            lr_scheduler.load_state_dict(resume_state["lr_sched_state"])
-
-            requeue_stats = resume_state["requeue_stats"]
-            self.env_time = requeue_stats["env_time"]
-            self.pth_time = requeue_stats["pth_time"]
-            self.num_steps_done = requeue_stats["num_steps_done"]
-            self.num_updates_done = requeue_stats["num_updates_done"]
-            self._last_checkpoint_percent = requeue_stats[
-                "_last_checkpoint_percent"
-            ]
-            count_checkpoints = requeue_stats["count_checkpoints"]
-            prev_time = requeue_stats["prev_time"]
-
-            self.running_episode_stats = requeue_stats["running_episode_stats"]
-            self.window_episode_stats.update(
-                requeue_stats["window_episode_stats"]
-            )
-
-        else:
-            logger.info('Loading pretrained checkpoint')
-            prev_checkpoint = load_pretrained_checkpoint('data/objectnav_il_hd.ckpt')
-            prev_checkpoint = prev_checkpoint['state_dict']
-            logger.info(f'Adapting state dict')
-            new_state_dict = adapt_state_dict(prev_checkpoint)
-            logger.info(f'Loading adapted state dict into actor critic')
-            self.agent.load_state_dict(new_state_dict, strict=True)
+        # if resume_state is not None:
+        #     self.agent.load_state_dict(resume_state["state_dict"])
+        #     self.agent.outer_optimizer.load_state_dict(resume_state["optim_state"])
+        #     lr_scheduler.load_state_dict(resume_state["lr_sched_state"])
+        #
+        #     requeue_stats = resume_state["requeue_stats"]
+        #     self.env_time = requeue_stats["env_time"]
+        #     self.pth_time = requeue_stats["pth_time"]
+        #     self.num_steps_done = requeue_stats["num_steps_done"]
+        #     self.num_updates_done = requeue_stats["num_updates_done"]
+        #     self._last_checkpoint_percent = requeue_stats[
+        #         "_last_checkpoint_percent"
+        #     ]
+        #     count_checkpoints = requeue_stats["count_checkpoints"]
+        #     prev_time = requeue_stats["prev_time"]
+        #
+        #     self.running_episode_stats = requeue_stats["running_episode_stats"]
+        #     self.window_episode_stats.update(
+        #         requeue_stats["window_episode_stats"]
+        #     )
+        #
+        # else:
+        logger.info('Loading pretrained checkpoint')
+        prev_checkpoint = load_pretrained_checkpoint('data/objectnav_il_hd.ckpt')
+        prev_checkpoint = prev_checkpoint['state_dict']
+        logger.info(f'Adapting state dict')
+        new_state_dict = adapt_state_dict(prev_checkpoint)
+        logger.info(f'Loading adapted state dict into actor critic')
+        self.agent.load_state_dict(new_state_dict, strict=True)
+        # Freeze visual encoders and state encoder
+        self.agent.actor_critic.freeze_visual_encoders()
+        self.agent.actor_critic.freeze_state_encoder()
 
         iter_sampled_tasks = 0
 
@@ -691,7 +694,7 @@ class MILEnvDDPTrainer(PPOTrainer):
         # Map location CPU is almost always better than mapping to a CUDA device.
         if self.config.EVAL.SHOULD_LOAD_CKPT:
             ckpt_dict = self.load_checkpoint(
-                checkpoint_path, map_location="cpu"
+                checkpoint_path, map_location="cpu", weights_only=False
             )
         else:
             ckpt_dict = {}
@@ -860,6 +863,8 @@ class MILEnvDDPTrainer(PPOTrainer):
 
             while len(task_stats_episodes) < number_of_task_episodes:
 
+                current_episodes = self.envs.current_episodes()
+
                 if not evaluating:
 
                     for gradient_step in range(num_gradient_updates):
@@ -940,7 +945,6 @@ class MILEnvDDPTrainer(PPOTrainer):
                 else:
 
                     not_done_mask = not_done_mask.to(device=self.device)
-                    # print(batch)
 
                     # learner.eval()
                     with torch.no_grad():
@@ -960,18 +964,16 @@ class MILEnvDDPTrainer(PPOTrainer):
 
                     outputs = self.envs.step(step_data)
 
-                    if np.abs(outputs[0][0]['compass']) == 0.0:
-                        print('aquí tamoh family')
-
                     observations, rewards_l, dones, infos = [
                         list(x) for x in zip(*outputs)
                     ]
-                    batch = batch_obs(  # type: ignore
+                    batch1 = batch_obs(  # type: ignore
                         observations,
                         device=self.device,
                         cache=self._obs_batching_cache,
                     )
-                    batch = apply_obs_transforms_batch(batch, self.obs_transforms)  # type: ignore
+                    batch2 = copy.deepcopy(batch1)
+                    batch = apply_obs_transforms_batch(batch2, self.obs_transforms)  # type: ignore
 
                     not_done_mask = torch.tensor(
                         [[not done] for done in dones],
@@ -996,9 +998,7 @@ class MILEnvDDPTrainer(PPOTrainer):
 
                         # episode ended
                         if not not_done_mask[i].item():
-                            episodebar.update()
-                            if episodebar.n == 184:
-                                print('aquí tamoh family')
+
                             episode_stats = {
                                 "reward": current_episode_reward[i].item()
                             }
@@ -1007,12 +1007,16 @@ class MILEnvDDPTrainer(PPOTrainer):
                             )
                             current_episode_reward[i] = 0
                             # use scene_id + episode_id as unique id for storing stats
+                            init =len(task_stats_episodes)
                             task_stats_episodes[
                                 (
                                     current_episodes[i].scene_id,
                                     current_episodes[i].episode_id,
                                 )
                             ] = episode_stats
+                            post = len(task_stats_episodes)
+                            if init < post:
+                                episodebar.update()
 
                             if len(self.config.VIDEO_OPTION) > 0:
                                 generate_video(
@@ -1040,24 +1044,27 @@ class MILEnvDDPTrainer(PPOTrainer):
 
                             rgb_frames[i].append(frame)
 
-                    (
-                        self.envs,
-                        test_recurrent_hidden_states,
-                        not_done_mask,
-                        current_episode_reward,
-                        prev_actions,
-                        batch,
-                        rgb_frames,
-                    ) = self._pause_envs(
-                        envs_to_pause,
-                        self.envs,
-                        test_recurrent_hidden_states,
-                        not_done_mask,
-                        current_episode_reward,
-                        prev_action,
-                        batch,
-                        rgb_frames,
-                    )
+                    # Since we only use 1 env, no need to pause it
+                    # (
+                    #     self.envs,
+                    #     test_recurrent_hidden_states,
+                    #     not_done_mask,
+                    #     current_episode_reward,
+                    #     prev_actions,
+                    #     batch,
+                    #     rgb_frames,
+                    # ) = self._pause_envs(
+                    #     envs_to_pause,
+                    #     self.envs,
+                    #     test_recurrent_hidden_states,
+                    #     not_done_mask,
+                    #     current_episode_reward,
+                    #     prev_action,
+                    #     batch,
+                    #     rgb_frames,
+                    # )
+
+
 
             taskbar.update()
             stats_episodes.update(task_stats_episodes)

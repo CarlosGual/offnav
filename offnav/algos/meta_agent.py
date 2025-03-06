@@ -38,7 +38,7 @@ class MILAgent(nn.Module):
         self.actor_critic = l2l.algorithms.MAML(actor_critic,
                                                 lr=inner_lr,
                                                 first_order=True,
-                                                allow_nograd=False,
+                                                allow_nograd=True,
                                                 allow_unused=False)
 
         self.num_mini_batch = num_mini_batch

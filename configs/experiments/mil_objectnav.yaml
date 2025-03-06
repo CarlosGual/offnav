@@ -4,11 +4,11 @@ ENV_NAME: "SimpleMetaRLEnv"
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
 VIDEO_OPTION: []
-TENSORBOARD_DIR: "data/checkpoints/pruebas"
-CHECKPOINT_FOLDER: "data/checkpoints/pruebas"
+TENSORBOARD_DIR: "data/checkpoints/pruebas_full"
+CHECKPOINT_FOLDER: "data/checkpoints/pruebas_full"
 VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
-EVAL_CKPT_PATH_DIR: "data/checkpoints/pruebas_iguales_penelope_setup3"
+EVAL_CKPT_PATH_DIR: "data/checkpoints/pruebas_full"
 TRAINER_NAME: "pirlnav-mil"
 SENSORS: ["RGB_SENSOR"]
 NUM_UPDATES: 100000 # num outer updates
