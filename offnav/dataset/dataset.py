@@ -436,14 +436,21 @@ class MetaEpisodeIterator(Iterator[T]):
 
         self._iterator = None
         # self._prev_task_id = None
-        # self._task_id = None
+        self._task_id = None
 
     def set_task(self, task_id: str) -> bool:
         task_episodes = self.episodes_dict[task_id]
-        # self._task_id = task_id
+        self._task_id = task_id
         self._iterator = iter(task_episodes)
         self._shuffle()
         return True
+
+    def get_tasks(self) -> List[str]:
+        return list(set(self.episodes_dict.keys()))
+
+    def get_episodes(self) -> List[Episode]:
+        assert self._task_id is not None, 'Task not set. A call to set_task is required before calling get_episodes'
+        return self.episodes_dict[self._task_id]
 
     def __iter__(self) -> "MetaEpisodeIterator":
         return self

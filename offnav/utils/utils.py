@@ -308,4 +308,4 @@ def soft_update_from_to(source, target, tau):
 
 
 def load_pretrained_checkpoint(checkpoint_path):
-    return torch.load(checkpoint_path, map_location="cpu")
+    return torch.load(checkpoint_path, map_location="cpu", weights_only=False)

@@ -201,11 +201,11 @@ class MetaVectorEnv:
         self.action_spaces = [
             read_fn() for read_fn in self._connection_read_fns
         ]
-        for write_fn in self._connection_write_fns:
-            write_fn((CALL_COMMAND, (NUMBER_OF_EPISODE_NAME, None)))
-        self.number_of_episodes = [
-            read_fn() for read_fn in self._connection_read_fns
-        ]
+        # for write_fn in self._connection_write_fns:
+        #     write_fn((CALL_COMMAND, (NUMBER_OF_EPISODE_NAME, None)))
+        # self.number_of_episodes = [
+        #     read_fn() for read_fn in self._connection_read_fns
+        # ]
         self._paused: List[Tuple] = []
 
     @property

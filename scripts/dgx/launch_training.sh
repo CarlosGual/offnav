@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # ******************* Setup dirs *************************************************
-setup="setup1"
-exp_name="dgx_multinodo_setup1"
+setup="full"
+exp_name="dgx_1nodo_semifreezed_0.0001"
 
 CONFIG="configs/experiments/mil_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_${setup}"
@@ -47,18 +47,18 @@ torchrun --nnodes="${NHOSTS}" \
     --run-type train \
     TENSORBOARD_DIR "$TENSORBOARD_DIR" \
     CHECKPOINT_FOLDER "$CHECKPOINT_DIR" \
-    NUM_UPDATES 10000 \
+    NUM_UPDATES 30000 \
     WANDB_ENABLED True \
-    NUM_ENVIRONMENTS 38 \
+    NUM_ENVIRONMENTS 30 \
     IL.BehaviorCloning.num_mini_batch 2 \
-    IL.BehaviorCloning.lr 0.00001 \
+    IL.BehaviorCloning.lr 0.0001 \
     META.MIL.num_tasks 2 \
     META.MIL.num_gradient_updates 2 \
     META.MIL.num_updates_per_sampled_tasks 5 \
     RL.DDPPO.force_distributed True \
     RL.DDPPO.distrib_backend 'NCCL' \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz" \
-    POLICY.RGB_ENCODER.backbone 'resnet18' \
+    POLICY.RGB_ENCODER.backbone 'resnet50' \
 #    POLICY.RGB_ENCODER.pretrained_encoder 'data/visual_encoders/omnidata_DINO_02.pth' \
 
 kill $NVIDIA_SMI_PID

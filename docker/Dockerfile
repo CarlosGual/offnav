@@ -39,7 +39,7 @@ RUN ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake
 RUN cmake --version
 
 # Add user
-RUN useradd -u 1001 --create-home carlos # 1001 for penelope, zeus and poseidon and 1004 for DGX
+RUN useradd -u 1004 --create-home carlos # 1001 for penelope, zeus and poseidon and 1004 for DGX
 WORKDIR /home/carlos
 RUN mkdir code/
 

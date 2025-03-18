@@ -2,4 +2,4 @@
 
 . activate habitat
 cd ~/code/ && pip install -e .
-bash scripts/dgx/launch_eval.sh
+bash scripts/dgx/launch_training.sh

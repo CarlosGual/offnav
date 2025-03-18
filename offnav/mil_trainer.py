@@ -114,7 +114,7 @@ class MILEnvDDPTrainer(PPOTrainer):
             num_mini_batch=il_cfg.num_mini_batch,
             inner_lr=il_cfg.lr,
             outer_lr=il_cfg.lr,
-            outer_encoder_lr=il_cfg.encoder_lr,
+            outer_encoder_lr=il_cfg.lr,
             eps=il_cfg.eps,
             max_grad_norm=il_cfg.max_grad_norm,
             wd=il_cfg.wd,
@@ -147,9 +147,11 @@ class MILEnvDDPTrainer(PPOTrainer):
         if resume_state is not None:
             if self.config.OVERWRITE_NUM_UPDATES:
                 num_updates = self.config.NUM_UPDATES
+                num_envs = self.config.NUM_ENVIRONMENTS
                 self.config: Config = resume_state["config"]
                 self.config.defrost()
                 self.config.NUM_UPDATES = num_updates
+                self.config.NUM_ENVIRONMENTS = num_envs
                 self.config.freeze()
             else:
                 self.config: Config = resume_state["config"]
@@ -395,39 +397,37 @@ class MILEnvDDPTrainer(PPOTrainer):
             lr_lambda=lambda x: 1 - self.percent_done(),
         )
 
-        # resume_state = load_resume_state(self.config)
-        # if resume_state is not None:
-        #     self.agent.load_state_dict(resume_state["state_dict"])
-        #     self.agent.outer_optimizer.load_state_dict(resume_state["optim_state"])
-        #     lr_scheduler.load_state_dict(resume_state["lr_sched_state"])
-        #
-        #     requeue_stats = resume_state["requeue_stats"]
-        #     self.env_time = requeue_stats["env_time"]
-        #     self.pth_time = requeue_stats["pth_time"]
-        #     self.num_steps_done = requeue_stats["num_steps_done"]
-        #     self.num_updates_done = requeue_stats["num_updates_done"]
-        #     self._last_checkpoint_percent = requeue_stats[
-        #         "_last_checkpoint_percent"
-        #     ]
-        #     count_checkpoints = requeue_stats["count_checkpoints"]
-        #     prev_time = requeue_stats["prev_time"]
-        #
-        #     self.running_episode_stats = requeue_stats["running_episode_stats"]
-        #     self.window_episode_stats.update(
-        #         requeue_stats["window_episode_stats"]
-        #     )
-        #
-        # else:
-        logger.info('Loading pretrained checkpoint')
-        prev_checkpoint = load_pretrained_checkpoint('data/objectnav_il_hd.ckpt')
-        prev_checkpoint = prev_checkpoint['state_dict']
-        logger.info(f'Adapting state dict')
-        new_state_dict = adapt_state_dict(prev_checkpoint)
-        logger.info(f'Loading adapted state dict into actor critic')
-        self.agent.load_state_dict(new_state_dict, strict=True)
-        # Freeze visual encoders and state encoder
-        self.agent.actor_critic.freeze_visual_encoders()
-        self.agent.actor_critic.freeze_state_encoder()
+        resume_state = None #load_resume_state(self.config)
+        if resume_state is not None:
+            self.agent.load_state_dict(resume_state["state_dict"])
+            self.agent.outer_optimizer.load_state_dict(resume_state["optim_state"])
+            lr_scheduler.load_state_dict(resume_state["lr_sched_state"])
+
+            requeue_stats = resume_state["requeue_stats"]
+            self.env_time = requeue_stats["env_time"]
+            self.pth_time = requeue_stats["pth_time"]
+            self.num_steps_done = requeue_stats["num_steps_done"]
+            self.num_updates_done = requeue_stats["num_updates_done"]
+            self._last_checkpoint_percent = requeue_stats[
+                "_last_checkpoint_percent"
+            ]
+            count_checkpoints = requeue_stats["count_checkpoints"]
+            prev_time = requeue_stats["prev_time"]
+
+            self.running_episode_stats = requeue_stats["running_episode_stats"]
+            self.window_episode_stats.update(
+                requeue_stats["window_episode_stats"]
+            )
+        else:
+            logger.info('Loading pretrained checkpoint')
+            prev_checkpoint = load_pretrained_checkpoint('data/objectnav_il_hd.ckpt')
+            prev_checkpoint = prev_checkpoint['state_dict']
+            logger.info(f'Adapting state dict')
+            new_state_dict = adapt_state_dict(prev_checkpoint)
+            logger.info(f'Loading adapted state dict into actor critic')
+            self.agent.load_state_dict(new_state_dict, strict=True)
+            # Freeze everything except the action distribution
+            self.agent.actor_critic.freeze_all_except(not_freeze=['GRUStateEncoder']) #can only work with GRUStateEncoder and visual encoders, the action distribution is outside the net
 
         iter_sampled_tasks = 0
 
@@ -792,10 +792,9 @@ class MILEnvDDPTrainer(PPOTrainer):
         logger.info("Iterating over all tasks in val dataset...")
         for task in tasks:
             self.set_eval_task(task)
-            number_of_task_episodes = sum(self.envs.number_of_episodes)
+            number_of_task_episodes = sum(self.envs.count_episodes())
             logger.info(f"Iterating over all episodes in task {task}...")
             episodebar = tqdm.tqdm(total=number_of_task_episodes, position=0, leave=True, mininterval=1)
-            current_episodes = self.envs.current_episodes()
 
             # Get init observations
             observations = self.envs.reset()

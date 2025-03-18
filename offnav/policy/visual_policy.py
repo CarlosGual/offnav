@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 from gym import Space
+from typing import List
+
 from habitat import Config, logger
 from habitat.tasks.nav.nav import EpisodicCompassSensor, EpisodicGPSSensor
 from habitat.tasks.nav.object_nav_task import ObjectGoalSensor
@@ -300,3 +302,11 @@ class ObjectNavILMAEPolicy(ILPolicy):
     def unfreeze_actor(self):
         for param in self.action_distribution.parameters():
             param.requires_grad_(True)
+
+    def freeze_all_except(self, not_freeze: List[str]):
+        for child in self.net.children():
+            for param in child.parameters():
+                if child.__class__.__name__  not in not_freeze:
+                    param.requires_grad_(False)
+                else:
+                    param.requires_grad_(True)

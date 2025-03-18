@@ -146,6 +146,10 @@ class MetaEnv:
         assert self._current_episode is not None
         return self._current_episode
 
+    @property
+    def get_episodes(self):
+        return self._episode_iterator.get_episodes()
+
     @current_episode.setter
     def current_episode(self, episode: Episode) -> None:
         self._current_episode = episode
@@ -378,7 +382,7 @@ class MetaRLEnv(gym.Env):
         self._env = MetaEnv(config, dataset)
         self.observation_space = self._env.observation_space
         self.action_space = self._env.action_space
-        self.number_of_episodes = self._env.number_of_episodes
+        self.number_of_episodes = None # We can't get number of episodes until we set the task
         self.reward_range = self.get_reward_range()
         self._task_id = None
 
@@ -390,9 +394,12 @@ class MetaRLEnv(gym.Env):
     def habitat_env(self) -> MetaEnv:
         return self._env
 
+    def get_tasks(self) -> List[str]:
+        return self._env.episode_iterator.get_tasks()
+
     @property
     def episodes(self) -> List[Episode]:
-        return self._env.episodes
+        return self._env.get_episodes
 
     @episodes.setter
     def episodes(self, episodes: List[Episode]) -> None:
@@ -486,7 +493,7 @@ class SimpleMetaRLEnv(MetaRLEnv):
     def __init__(self, config: Config, dataset: Optional[Dataset] = None):
         super().__init__(config, dataset)
         # Get the unique goals available in the episodes
-        self._available_tasks = list(set([episode.goals_key for episode in self.episodes]))
+        self._available_tasks = self.get_tasks()
 
     def sample_tasks(self, num_tasks):
         assert num_tasks <= len(self._available_tasks), ("num_tasks should be less than or equal to the number of "
