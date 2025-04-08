@@ -50,7 +50,7 @@ def write_dataset(data_writer, rollout):
 def load_encoder(encoder, path):
     assert os.path.exists(path)
     if isinstance(encoder.backbone, ResNet):
-        state_dict = torch.load(path, map_location="cpu")["teacher"]
+        state_dict = torch.load(path, map_location="cpu", weights_only=False)["teacher"]
         state_dict = {
             k.replace("module.", ""): v for k, v in state_dict.items()
         }

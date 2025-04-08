@@ -1,4 +1,5 @@
 import contextlib
+import json
 import os
 import random
 import time
@@ -76,8 +77,8 @@ class PIRLNavPPOTrainer(PPOTrainer):
         self.actor_critic.to(self.device)
 
         if (
-            self.config.RL.DDPPO.pretrained_encoder
-            or self.config.RL.DDPPO.pretrained
+                self.config.RL.DDPPO.pretrained_encoder
+                or self.config.RL.DDPPO.pretrained
         ):
             pretrained_state = torch.load(
                 self.config.RL.DDPPO.pretrained_weights, map_location="cpu"
@@ -86,7 +87,7 @@ class PIRLNavPPOTrainer(PPOTrainer):
         if self.config.RL.DDPPO.pretrained:
             self.actor_critic.load_state_dict(
                 {  # type: ignore
-                    k[len("actor_critic.") :]: v
+                    k[len("actor_critic."):]: v
                     for k, v in pretrained_state["state_dict"].items()
                 }
             )
@@ -94,7 +95,7 @@ class PIRLNavPPOTrainer(PPOTrainer):
             prefix = "actor_critic.net.visual_encoder."
             self.actor_critic.net.visual_encoder.load_state_dict(
                 {
-                    k[len(prefix) :]: v
+                    k[len(prefix):]: v
                     for k, v in pretrained_state["state_dict"].items()
                     if k.startswith(prefix)
                 }
@@ -172,9 +173,9 @@ class PIRLNavPPOTrainer(PPOTrainer):
         ppo_cfg = self.config.RL.PPO
 
         with (
-            get_writer(self.config, flush_secs=self.flush_secs)
-            if rank0_only()
-            else contextlib.suppress()
+                get_writer(self.config, flush_secs=self.flush_secs)
+                if rank0_only()
+                else contextlib.suppress()
         ) as writer:
             while not self.is_done():
                 profiling_wrapper.on_start_step()
@@ -182,7 +183,7 @@ class PIRLNavPPOTrainer(PPOTrainer):
 
                 if ppo_cfg.use_linear_clip_decay:
                     self.agent.clip_param = ppo_cfg.clip_param * (
-                        1 - self.percent_done()
+                            1 - self.percent_done()
                     )
 
                 if rank0_only() and self._should_save_resume_state():
@@ -228,8 +229,8 @@ class PIRLNavPPOTrainer(PPOTrainer):
 
                 for step in range(ppo_cfg.num_steps):
                     is_last_step = (
-                        self.should_end_early(step + 1)
-                        or (step + 1) == ppo_cfg.num_steps
+                            self.should_end_early(step + 1)
+                            or (step + 1) == ppo_cfg.num_steps
                     )
 
                     for buffer_index in range(self._nbuffers):
@@ -297,8 +298,8 @@ class PIRLNavPPOTrainer(PPOTrainer):
         if resume_state is not None:
             self.config: Config = resume_state["config"]
             self.using_velocity_ctrl = (
-                self.config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS
-            ) == ["VELOCITY_CONTROL"]
+                                           self.config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS
+                                       ) == ["VELOCITY_CONTROL"]
 
         if self.config.RL.DDPPO.force_distributed:
             self._is_distributed = True
@@ -322,7 +323,7 @@ class PIRLNavPPOTrainer(PPOTrainer):
             self.config.SIMULATOR_GPU_ID = local_rank
             # Multiply by the number of simulators to make sure they also get unique seeds
             self.config.TASK_CONFIG.SEED += (
-                torch.distributed.get_rank() * self.config.NUM_ENVIRONMENTS
+                    torch.distributed.get_rank() * self.config.NUM_ENVIRONMENTS
             )
             self.config.freeze()
 
@@ -440,7 +441,7 @@ class PIRLNavPPOTrainer(PPOTrainer):
 
     @rank0_only
     def _training_log(
-        self, writer, losses: Dict[str, float], prev_time: int = 0
+            self, writer, losses: Dict[str, float], prev_time: int = 0
     ):
         deltas = {
             k: (
@@ -510,10 +511,10 @@ class PIRLNavPPOTrainer(PPOTrainer):
             )
 
     def _eval_checkpoint(
-        self,
-        checkpoint_path: str,
-        writer: TensorboardWriter,
-        checkpoint_index: int = 0,
+            self,
+            checkpoint_path: str,
+            writer: TensorboardWriter,
+            checkpoint_index: int = 0,
     ) -> None:
         r"""Evaluates a single checkpoint.
 
@@ -549,8 +550,8 @@ class PIRLNavPPOTrainer(PPOTrainer):
         config.freeze()
 
         if (
-            len(self.config.VIDEO_OPTION) > 0
-            and self.config.VIDEO_RENDER_TOP_DOWN
+                len(self.config.VIDEO_OPTION) > 0
+                and self.config.VIDEO_RENDER_TOP_DOWN
         ):
             config.defrost()
             config.TASK_CONFIG.TASK.MEASUREMENTS.append("TOP_DOWN_MAP")
@@ -582,8 +583,7 @@ class PIRLNavPPOTrainer(PPOTrainer):
 
         self._setup_actor_critic_agent(ppo_cfg)
 
-        if self.agent.actor_critic.should_load_agent_state:
-            self.agent.load_state_dict(ckpt_dict["state_dict"])
+        self.agent.load_state_dict(ckpt_dict["state_dict"])
         self.actor_critic = self.agent.actor_critic
 
         observations = self.envs.reset()
@@ -618,6 +618,9 @@ class PIRLNavPPOTrainer(PPOTrainer):
             Any, Any
         ] = {}  # dict of dicts that stores stats per episode
 
+        reference_replay = {}
+        initialized_episodes = []
+
         rgb_frames = [
             [] for _ in range(self.config.NUM_ENVIRONMENTS)
         ]  # type: List[List[np.ndarray]]
@@ -640,8 +643,8 @@ class PIRLNavPPOTrainer(PPOTrainer):
         pbar = tqdm.tqdm(total=number_of_eval_episodes)
         self.actor_critic.eval()
         while (
-            len(stats_episodes) < number_of_eval_episodes
-            and self.envs.num_envs > 0
+                len(stats_episodes) < number_of_eval_episodes
+                and self.envs.num_envs > 0
         ):
             current_episodes = self.envs.current_episodes()
 
@@ -665,6 +668,23 @@ class PIRLNavPPOTrainer(PPOTrainer):
             # in the subprocesses.
             # For backwards compatibility, we also call .item() to convert to
             # an int
+
+            for action, episode in zip(actions, current_episodes):
+                id = episode.scene_id + '?' + episode.episode_id
+                if id not in initialized_episodes:
+                    initialized_episodes.append(id)
+                    reference_replay[id] = [
+                        {
+                            'action': action.item()
+                        }
+                    ]
+                else:
+                    reference_replay[id].append(
+                        {
+                            'action': action.item()
+                        }
+                    )
+
             if actions[0].shape[0] > 1:
                 step_data = [
                     action_array_to_dict(self.policy_action_space, a)
@@ -700,8 +720,8 @@ class PIRLNavPPOTrainer(PPOTrainer):
             n_envs = self.envs.num_envs
             for i in range(n_envs):
                 if (
-                    next_episodes[i].scene_id,
-                    next_episodes[i].episode_id,
+                        next_episodes[i].scene_id,
+                        next_episodes[i].episode_id,
                 ) in stats_episodes:
                     envs_to_pause.append(i)
 
@@ -773,8 +793,8 @@ class PIRLNavPPOTrainer(PPOTrainer):
         aggregated_stats = {}
         for stat_key in next(iter(stats_episodes.values())).keys():
             aggregated_stats[stat_key] = (
-                sum(v[stat_key] for v in stats_episodes.values())
-                / num_episodes
+                    sum(v[stat_key] for v in stats_episodes.values())
+                    / num_episodes
             )
 
         for k, v in aggregated_stats.items():
@@ -791,5 +811,9 @@ class PIRLNavPPOTrainer(PPOTrainer):
         metrics = {k: v for k, v in aggregated_stats.items() if k != "reward"}
         for k, v in metrics.items():
             writer.add_scalar(f"eval_metrics/{k}", v, step_id)
+
+        # Save reference_replay as a json file
+        with open(f'reference_replay.json', 'w') as f:
+            json.dump(reference_replay, f)
 
         self.envs.close()

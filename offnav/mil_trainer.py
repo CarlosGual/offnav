@@ -113,8 +113,8 @@ class MILEnvDDPTrainer(PPOTrainer):
             num_envs=self.envs.num_envs,
             num_mini_batch=il_cfg.num_mini_batch,
             inner_lr=il_cfg.lr,
-            outer_lr=il_cfg.lr,
-            outer_encoder_lr=il_cfg.lr,
+            outer_lr=il_cfg.encoder_lr,
+            outer_encoder_lr=il_cfg.encoder_lr,
             eps=il_cfg.eps,
             max_grad_norm=il_cfg.max_grad_norm,
             wd=il_cfg.wd,
@@ -397,7 +397,7 @@ class MILEnvDDPTrainer(PPOTrainer):
             lr_lambda=lambda x: 1 - self.percent_done(),
         )
 
-        resume_state = None #load_resume_state(self.config)
+        resume_state = load_resume_state(self.config)
         if resume_state is not None:
             self.agent.load_state_dict(resume_state["state_dict"])
             self.agent.outer_optimizer.load_state_dict(resume_state["optim_state"])
@@ -418,16 +418,16 @@ class MILEnvDDPTrainer(PPOTrainer):
             self.window_episode_stats.update(
                 requeue_stats["window_episode_stats"]
             )
-        else:
-            logger.info('Loading pretrained checkpoint')
-            prev_checkpoint = load_pretrained_checkpoint('data/objectnav_il_hd.ckpt')
-            prev_checkpoint = prev_checkpoint['state_dict']
-            logger.info(f'Adapting state dict')
-            new_state_dict = adapt_state_dict(prev_checkpoint)
-            logger.info(f'Loading adapted state dict into actor critic')
-            self.agent.load_state_dict(new_state_dict, strict=True)
-            # Freeze everything except the action distribution
-            self.agent.actor_critic.freeze_all_except(not_freeze=['GRUStateEncoder']) #can only work with GRUStateEncoder and visual encoders, the action distribution is outside the net
+        # else:
+        #     logger.info('Loading pretrained checkpoint')
+        #     prev_checkpoint = load_pretrained_checkpoint('data/checkpoints/metanav/pruebas_iguales_dgx_un_nodo_setup4/ckpt.14.pth')
+        #     prev_checkpoint = prev_checkpoint['state_dict']
+        #     logger.info(f'Adapting state dict')
+        #     new_state_dict = adapt_state_dict(prev_checkpoint)
+        #     logger.info(f'Loading adapted state dict into actor critic')
+        #     self.agent.load_state_dict(new_state_dict, strict=True)
+        #     # Freeze everything except the action distribution
+        #     # self.agent.actor_critic.freeze_all_except(not_freeze=['GRUStateEncoder']) #can only work with GRUStateEncoder and visual encoders, the action distribution is outside the net
 
         iter_sampled_tasks = 0
 
@@ -866,7 +866,7 @@ class MILEnvDDPTrainer(PPOTrainer):
 
                 if not evaluating:
 
-                    for gradient_step in range(num_gradient_updates):
+                    for gradient_step in range(1):
 
                         for step in range(num_steps):
 
@@ -971,8 +971,7 @@ class MILEnvDDPTrainer(PPOTrainer):
                         device=self.device,
                         cache=self._obs_batching_cache,
                     )
-                    batch2 = copy.deepcopy(batch1)
-                    batch = apply_obs_transforms_batch(batch2, self.obs_transforms)  # type: ignore
+                    batch = apply_obs_transforms_batch(batch1, self.obs_transforms)  # type: ignore
 
                     not_done_mask = torch.tensor(
                         [[not done] for done in dones],
@@ -985,18 +984,11 @@ class MILEnvDDPTrainer(PPOTrainer):
                     ).unsqueeze(1)
                     current_episode_reward += rewards
 
-                    next_episodes = self.envs.current_episodes()
-                    envs_to_pause = []
                     n_envs = self.envs.num_envs
                     for i in range(n_envs):
-                        if (
-                                next_episodes[i].scene_id,
-                                next_episodes[i].episode_id,
-                        ) in task_stats_episodes:
-                            envs_to_pause.append(i)
-
                         # episode ended
                         if not not_done_mask[i].item():
+                            evaluating = False
 
                             episode_stats = {
                                 "reward": current_episode_reward[i].item()
@@ -1006,16 +998,13 @@ class MILEnvDDPTrainer(PPOTrainer):
                             )
                             current_episode_reward[i] = 0
                             # use scene_id + episode_id as unique id for storing stats
-                            init =len(task_stats_episodes)
                             task_stats_episodes[
                                 (
                                     current_episodes[i].scene_id,
                                     current_episodes[i].episode_id,
                                 )
                             ] = episode_stats
-                            post = len(task_stats_episodes)
-                            if init < post:
-                                episodebar.update()
+                            episodebar.update()
 
                             if len(self.config.VIDEO_OPTION) > 0:
                                 generate_video(
@@ -1042,28 +1031,6 @@ class MILEnvDDPTrainer(PPOTrainer):
                                 frame = overlay_frame(frame, infos[i])
 
                             rgb_frames[i].append(frame)
-
-                    # Since we only use 1 env, no need to pause it
-                    # (
-                    #     self.envs,
-                    #     test_recurrent_hidden_states,
-                    #     not_done_mask,
-                    #     current_episode_reward,
-                    #     prev_actions,
-                    #     batch,
-                    #     rgb_frames,
-                    # ) = self._pause_envs(
-                    #     envs_to_pause,
-                    #     self.envs,
-                    #     test_recurrent_hidden_states,
-                    #     not_done_mask,
-                    #     current_episode_reward,
-                    #     prev_action,
-                    #     batch,
-                    #     rgb_frames,
-                    # )
-
-
 
             taskbar.update()
             stats_episodes.update(task_stats_episodes)

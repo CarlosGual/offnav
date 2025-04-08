@@ -4,11 +4,11 @@ ENV_NAME: "SimpleMetaRLEnv"
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
 VIDEO_OPTION: []
-TENSORBOARD_DIR: "data/checkpoints/pruebas"
-CHECKPOINT_FOLDER: "data/checkpoints/pruebas"
+TENSORBOARD_DIR: "data/checkpoints/good_setup5"
+CHECKPOINT_FOLDER: "data/checkpoints/pruebas_iguales_dgx_un_nodo_setup4/ckpt.5.pth"
 VIDEO_DIR: "video_dir"
 TEST_EPISODE_COUNT: -1
-EVAL_CKPT_PATH_DIR: "data/checkpoints/pruebas_iguales_dgx_un_nodo_setup3/ckpt.19.pth"
+EVAL_CKPT_PATH_DIR: "data/checkpoints/pruebas_iguales_dgx_un_nodo_setup4/ckpt.5.pth"
 TRAINER_NAME: "pirlnav-mil"
 SENSORS: ["RGB_SENSOR"]
 NUM_UPDATES: 100000 # num outer updates
@@ -27,8 +27,8 @@ IL:
   POLICY:
     name: "ObjectNavILMAEPolicy"
   BehaviorCloning:
-    encoder_lr: 0.00001
-    lr: 0.00001
+    encoder_lr: 0.00001 # Outer lr
+    lr: 0.00001 # Inner lr
     num_mini_batch: 2 # With this we control how many tasks we have per outer update
   STATE_ENCODER:
     rnn_type: "GRU"
