@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # ******************* Setup dirs *************************************************
-setup="setup4"
-exp_name="dgx_2nodos_warmupforfull2"
+setup="full"
+exp_name="dgx_with_semnav"
 
 CONFIG="configs/experiments/mil_objectnav.yaml"
 DATA_PATH="data/datasets/objectnav/objectnav_hm3d_hd_${setup}"
@@ -60,6 +60,7 @@ torchrun --nnodes="${NHOSTS}" \
     RL.DDPPO.distrib_backend 'NCCL' \
     TASK_CONFIG.DATASET.DATA_PATH "$DATA_PATH/{split}/{split}.json.gz" \
     POLICY.RGB_ENCODER.backbone 'resnet50' \
-    POLICY.RGB_ENCODER.pretrained_encoder 'data/visual_encoders/omnidata_DINO_02.pth' \
+    POLICY.SEMANTIC_ENCODER.backbone 'resnet50' \
+#    POLICY.RGB_ENCODER.pretrained_encoder 'data/visual_encoders/omnidata_DINO_02.pth' \
 
 kill $NVIDIA_SMI_PID

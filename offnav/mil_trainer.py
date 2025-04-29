@@ -377,6 +377,22 @@ class MILEnvDDPTrainer(PPOTrainer):
 
         return count_steps_delta
 
+    @staticmethod
+    def _transform_semantic_obs(batch):
+        constant = 414534 # Constant for 40 categories
+
+        observations_mult = batch["observations"]["semantic"] * constant
+
+        rgb_matrix = torch.zeros((observations_mult.size(0), 480, 640, 3), dtype=torch.uint8,
+                                 device=observations_mult.device)
+        rgb_matrix[:, :, :, 0] = (observations_mult[:, :, :, 0] >> 16) & 0xFF  # R
+        rgb_matrix[:, :, :, 1] = (observations_mult[:, :, :, 0] >> 8) & 0xFF  # G
+        rgb_matrix[:, :, :, 2] = observations_mult[:, :, :, 0] & 0xFF  # B
+
+        batch["observations"]["semantic_rgb"] = rgb_matrix
+
+        return batch
+
     @profiling_wrapper.RangeContext("train")
     def train(self) -> None:
         r"""Main method for training DD/PPO.
@@ -491,6 +507,7 @@ class MILEnvDDPTrainer(PPOTrainer):
                 count_steps_delta = self._make_rollouts(il_cfg, meta_cfg, count_steps_delta)
                 adapt_tasks_generator = self.rollouts.adapt_recurrent_generator(il_cfg.num_mini_batch)
                 valid_tasks_generator = self.rollouts.valid_recurrent_generator(il_cfg.num_mini_batch)
+
                 hidden_states = []
 
                 self.agent.actor_critic.train()
@@ -500,6 +517,8 @@ class MILEnvDDPTrainer(PPOTrainer):
                     learner = self.agent.actor_critic.clone()
 
                     for num_gradient_update, task in enumerate(adapt_task):
+                        # Convert to semantic
+                        task = self._transform_semantic_obs(task)
 
                         if num_gradient_update == 0: # If it is the first iteration, we don't have hidden states
                             (
@@ -522,6 +541,9 @@ class MILEnvDDPTrainer(PPOTrainer):
                         total_inner_action_loss += inner_action_loss
                         total_inner_dist_entropy += inner_dist_entropy
                         total_inner_total_loss += inner_total_loss
+
+                    # Convert to semantic
+                    valid_task = self._transform_semantic_obs(valid_task)
 
                     (
                         outer_total_loss,
